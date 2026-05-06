@@ -20,16 +20,28 @@ type eventBridge struct {
 	// updates the tray icon's label/tooltip without any IPC or disk work so
 	// the event loop goroutine never blocks on it.
 	onStatusChange func(activeNames []string, handshakeMap map[string]bool)
+	// onReconcileHistory is called on every status event with the active
+	// tunnel set + per-tunnel rx/tx so the history store can record sessions
+	// that were started or ended by the helper itself (auto-reconnect on
+	// wake, wifi rules, health-check recovery). nil when the bridge runs
+	// without a history store.
+	onReconcileHistory func(activeNames []string, rx, tx map[string]int64, reason string)
 
 	mu           sync.Mutex
 	subscribedTo *ipc.Client // tracks which client we're currently subscribed on
 }
 
-func newEventBridge(app *application.App, clients *ipc.ClientHolder, onStatusChange func(activeNames []string, handshakeMap map[string]bool)) *eventBridge {
+func newEventBridge(
+	app *application.App,
+	clients *ipc.ClientHolder,
+	onStatusChange func(activeNames []string, handshakeMap map[string]bool),
+	onReconcileHistory func(activeNames []string, rx, tx map[string]int64, reason string),
+) *eventBridge {
 	return &eventBridge{
-		app:            app,
-		clients:        clients,
-		onStatusChange: onStatusChange,
+		app:                app,
+		clients:            clients,
+		onStatusChange:     onStatusChange,
+		onReconcileHistory: onReconcileHistory,
 	}
 }
 
@@ -95,6 +107,19 @@ func (b *eventBridge) handleEvent(method string, params json.RawMessage) {
 					hsMap[status.TunnelName] = status.LastHandshake != ""
 				}
 				b.onStatusChange(status.ActiveTunnels, hsMap)
+			}
+			if b.onReconcileHistory != nil {
+				rx := make(map[string]int64, len(status.Tunnels)+1)
+				tx := make(map[string]int64, len(status.Tunnels)+1)
+				for _, ts := range status.Tunnels {
+					rx[ts.TunnelName] = ts.RxBytes
+					tx[ts.TunnelName] = ts.TxBytes
+				}
+				if status.TunnelName != "" {
+					rx[status.TunnelName] = status.RxBytes
+					tx[status.TunnelName] = status.TxBytes
+				}
+				b.onReconcileHistory(status.ActiveTunnels, rx, tx, "")
 			}
 		}
 	case ipc.EventReconnect:

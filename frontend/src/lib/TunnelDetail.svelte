@@ -1,5 +1,5 @@
 <script>
-  import { selectedTunnel, connectionStatus, refreshTunnels, refreshStatus } from '../stores/tunnels.js';
+  import { tunnels, selectedTunnel, connectionStatus, refreshTunnels, refreshStatus } from '../stores/tunnels.js';
   import { t } from '../i18n/index.js';
   import { errText } from './errors.js';
   import { createEventDispatcher, tick, onDestroy } from 'svelte';
@@ -99,10 +99,85 @@
   // *name* actually changes.
   let lastLoadedName = '';
   $: if ($selectedTunnel && $selectedTunnel.name !== lastLoadedName) {
+    // Flush any pending edit for the previous tunnel BEFORE we reset the
+    // textarea state. Without this, a quick switch within the 800ms
+    // debounce window would clobber notesValue with the new tunnel's
+    // notes, and the deferred saveNotes would early-return on the
+    // notesValue === notesSaved check, silently dropping the edit.
+    if (lastLoadedName && notesValue !== notesSaved) {
+      flushNotes(lastLoadedName, notesValue);
+    }
+    if (notesSaveTimer) {
+      clearTimeout(notesSaveTimer);
+      notesSaveTimer = null;
+    }
     lastLoadedName = $selectedTunnel.name;
+    notesValue = $selectedTunnel.notes || '';
+    notesSaved = notesValue;
+    notesError = '';
     loadDetail($selectedTunnel.name);
     loadWifiRules($selectedTunnel.name);
   }
+
+  // Per-tunnel notes. Populated from TunnelInfo.notes in the store, edited
+  // locally, persisted via SetTunnelNotes on blur or 800ms idle.
+  // notesSaved is the last value we committed to disk — used to skip
+  // no-op saves and to detect dirty state on tunnel switch.
+  let notesValue = '';
+  let notesSaved = '';
+  let notesSaveTimer = null;
+  let notesError = '';
+
+  // flushNotes is the single write path used by both the debounce/blur
+  // saver and the cross-tunnel-switch flush. It patches BOTH stores —
+  // selectedTunnel for the immediate UI, tunnels for the list — so
+  // re-selecting the same tunnel before the next ListTunnels refresh
+  // doesn't show stale (pre-edit) notes.
+  async function flushNotes(name, value) {
+    if (!name) return false;
+    try {
+      await TunnelService.SetTunnelNotes(name, value);
+      tunnels.update(list => list.map(t => t.name === name ? { ...t, notes: value } : t));
+      selectedTunnel.update(sel => sel && sel.name === name ? { ...sel, notes: value } : sel);
+      // Only update local UI state if the user is still on this tunnel —
+      // otherwise we'd overwrite the new tunnel's notesSaved with the
+      // wrong value (this flush could be the cross-switch fire-and-forget).
+      if ($selectedTunnel && $selectedTunnel.name === name) {
+        notesSaved = value;
+        notesError = '';
+      }
+      return true;
+    } catch (e) {
+      if ($selectedTunnel && $selectedTunnel.name === name) {
+        notesError = errText(e);
+      } else {
+        console.error('flushNotes for', name, e);
+      }
+      return false;
+    }
+  }
+
+  async function saveNotes() {
+    if (!$selectedTunnel) return;
+    if (notesValue === notesSaved) return;
+    await flushNotes($selectedTunnel.name, notesValue);
+  }
+
+  function onNotesInput() {
+    // Debounced auto-save. Blur still calls saveNotes immediately, so this
+    // covers the case where the user stays in the textarea but stops typing.
+    if (notesSaveTimer) clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(saveNotes, 800);
+  }
+
+  onDestroy(() => {
+    if (notesSaveTimer) clearTimeout(notesSaveTimer);
+    // Best-effort flush on unmount (e.g. user deselected the tunnel
+    // while a debounce was still pending).
+    if (lastLoadedName && notesValue !== notesSaved) {
+      flushNotes(lastLoadedName, notesValue);
+    }
+  });
 
   async function loadWifiRules(name) {
     try {
@@ -414,6 +489,21 @@
             <span class="value">{detail.Interface.DNS.join(', ')}</span>
           </div>
         {/if}
+      {/if}
+    </div>
+
+    <div class="notes-block">
+      <label class="notes-label" for="tunnel-notes">{$t('tunnel.notes')}</label>
+      <textarea
+        id="tunnel-notes"
+        class="notes-textarea"
+        placeholder={$t('tunnel.notes_placeholder')}
+        bind:value={notesValue}
+        on:input={onNotesInput}
+        on:blur={saveNotes}
+        rows="2"></textarea>
+      {#if notesError}
+        <div class="notes-error">{notesError}</div>
       {/if}
     </div>
 
@@ -870,6 +960,47 @@
   .value.mono {
     font-family: var(--font-mono);
     font-size: 11px;
+  }
+
+  /* ---------- Notes ---------- */
+  .notes-block {
+    margin-bottom: var(--space-4);
+  }
+  .notes-label {
+    display: block;
+    font: var(--text-footnote);
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-2);
+  }
+  .notes-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    color: var(--text-primary);
+    font: var(--text-body);
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 160px;
+  }
+  .notes-textarea:focus-visible {
+    outline: 2px solid var(--accent-blue, #007AFF);
+    outline-offset: 0;
+    border-color: var(--accent-blue, #007AFF);
+  }
+  .notes-textarea::placeholder {
+    color: var(--text-muted);
+  }
+  .notes-error {
+    margin-top: var(--space-1);
+    font: var(--text-footnote);
+    color: var(--red);
   }
 
   /* ---------- Error message ---------- */

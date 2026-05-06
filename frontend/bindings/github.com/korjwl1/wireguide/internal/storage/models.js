@@ -9,6 +9,94 @@ import { Create as $Create } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as wifi$0 from "../wifi/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as time$0 from "../../../../../time/models.js";
+
+/**
+ * Session is one VPN session record. EndTime is a pointer so a still-active
+ * session (no end yet) can be distinguished from a completed session that
+ * happens to have ended at time.Time{} — the previous flat-struct design
+ * couldn't tell those apart and showed phantom "0s" rows in the UI when the
+ * helper was killed mid-connect before the disconnect path could write
+ * final stats.
+ */
+export class Session {
+    /**
+     * Creates a new Session instance.
+     * @param {Partial<Session>} [$$source = {}] - The source object to create the Session.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("tunnel_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["tunnel_name"] = "";
+        }
+        if (!("start_time" in $$source)) {
+            /**
+             * @member
+             * @type {time$0.Time}
+             */
+            this["start_time"] = null;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {time$0.Time | null | undefined}
+             */
+            this["end_time"] = undefined;
+        }
+        if (!("duration_sec" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["duration_sec"] = 0;
+        }
+        if (!("rx_bytes" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["rx_bytes"] = 0;
+        }
+        if (!("tx_bytes" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["tx_bytes"] = 0;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["disconnect_reason"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Session instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {Session}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Session(/** @type {Partial<Session>} */($$parsedSource));
+    }
+}
 
 /**
  * Settings holds application-wide settings.

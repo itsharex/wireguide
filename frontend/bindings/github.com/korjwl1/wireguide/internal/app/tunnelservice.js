@@ -84,8 +84,40 @@ export function CheckSSIDPermission() {
 }
 
 /**
+ * ClearConnectionHistory wipes the history file.
+ * @returns {$CancellablePromise<void>}
+ */
+export function ClearConnectionHistory() {
+    return $Call.ByID(1952295618);
+}
+
+/**
+ * CloseHistorySessions closes any open history sessions with the given reason.
+ * Called from gui.Run during shutdown so the UI doesn't show phantom "Active"
+ * rows after a quit.
+ * 
+ * Single GetStatus probe — the previous one-IPC-per-session pattern made
+ * shutdown latency scale linearly with active tunnel count. The status
+ * response carries every active tunnel's rx/tx, so one round-trip is enough.
+ * Falls back to the lastKnownStats cache (and ultimately zeros) when the
+ * helper is already unreachable. Skipped entirely when no sessions are open
+ * (the common quit-while-disconnected case) so shutdown stays snappy.
+ * @param {string} reason
+ * @returns {$CancellablePromise<void>}
+ */
+export function CloseHistorySessions(reason) {
+    return $Call.ByID(2047156944, reason);
+}
+
+/**
  * Connect loads a tunnel config from local storage and asks the helper to
  * bring it up. The helper re-validates server-side.
+ * 
+ * Session lifecycle is owned entirely by ReconcileHistoryFromStatus —
+ * opening here would race the helper's StateConnecting status broadcast,
+ * which already includes the tunnel name in ActiveTunnels. The race
+ * produced spurious "Reconnected" rows on every user-initiated connect
+ * before this was unified.
  * @param {string} name
  * @returns {$CancellablePromise<void>}
  */
@@ -107,6 +139,14 @@ export function DeleteTunnel(name) {
  * Disconnect tears down whatever tunnel the helper currently has active.
  * If the call fails with a "client closed" error (the health monitor may have
  * swapped the client during a recovery), retry once with the fresh client.
+ * 
+ * We mark lastKnownStats with reason "user" so the upcoming Reconcile (after
+ * the next status event with the tunnel gone) labels the closed session as
+ * a user disconnect. Existing fresh rx/tx counters from Reconcile's per-tick
+ * refresh are preserved — markUserDisconnect overwrites only the reason,
+ * not the bytes. This is what protects against rapid double-clicks: the
+ * second Disconnect's snapshot may be 0/0 (helper already tearing down)
+ * but the cache still holds the fresh values from the steady state.
  * @returns {$CancellablePromise<void>}
  */
 export function Disconnect() {
@@ -155,6 +195,18 @@ export function GetConfigText(name) {
 }
 
 /**
+ * GetConnectionHistory returns recorded sessions newest-first. Always returns
+ * a non-nil slice so the frontend doesn't have to special-case "no history
+ * yet" vs. "load failed".
+ * @returns {$CancellablePromise<storage$0.Session[]>}
+ */
+export function GetConnectionHistory() {
+    return $Call.ByID(3062937901).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType6($result);
+    }));
+}
+
+/**
  * GetKnownSSIDs returns the currently-connected SSID (if any) plus the
  * system's saved wireless networks. Both are best-effort — empty values
  * are normal on a Mac that's only ever been on Ethernet.
@@ -162,7 +214,7 @@ export function GetConfigText(name) {
  */
 export function GetKnownSSIDs() {
     return $Call.ByID(57262338).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType7($result);
     }));
 }
 
@@ -172,7 +224,7 @@ export function GetKnownSSIDs() {
  */
 export function GetRoutingTable() {
     return $Call.ByID(3049102509).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType7($result);
+        return $$createType9($result);
     }));
 }
 
@@ -181,7 +233,7 @@ export function GetRoutingTable() {
  */
 export function GetSettings() {
     return $Call.ByID(2393200110).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType9($result);
+        return $$createType11($result);
     }));
 }
 
@@ -193,7 +245,7 @@ export function GetSettings() {
  */
 export function GetStatus() {
     return $Call.ByID(3544552149).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType11($result);
+        return $$createType13($result);
     }));
 }
 
@@ -205,7 +257,7 @@ export function GetStatus() {
  */
 export function GetTunnelDetail(name) {
     return $Call.ByID(3171898132, name).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType13($result);
+        return $$createType15($result);
     }));
 }
 
@@ -226,7 +278,34 @@ export function GetVersion() {
  */
 export function ImportConfig(name, content) {
     return $Call.ByID(2459134310, name, content).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType17($result);
+    }));
+}
+
+/**
+ * ImportQRFromBytes decodes a QR code from raw image bytes (typically supplied
+ * by the file picker, which gives us bytes rather than a path) and imports the
+ * resulting WireGuard config.
+ * @param {string} data
+ * @param {string} name
+ * @returns {$CancellablePromise<$models.TunnelInfo | null>}
+ */
+export function ImportQRFromBytes(data, name) {
+    return $Call.ByID(3817928306, data, name).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType17($result);
+    }));
+}
+
+/**
+ * ImportQRFromPath reads an image from disk, decodes its QR code, and imports
+ * the contained WireGuard config under the given name.
+ * @param {string} path
+ * @param {string} name
+ * @returns {$CancellablePromise<$models.TunnelInfo | null>}
+ */
+export function ImportQRFromPath(path, name) {
+    return $Call.ByID(2544386800, path, name).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType17($result);
     }));
 }
 
@@ -238,7 +317,7 @@ export function ImportConfig(name, content) {
  */
 export function ImportZip(path) {
     return $Call.ByID(976469479, path).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType17($result);
+        return $$createType19($result);
     }));
 }
 
@@ -250,7 +329,7 @@ export function ImportZip(path) {
  */
 export function ImportZipData(data) {
     return $Call.ByID(2432663343, data).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType17($result);
+        return $$createType19($result);
     }));
 }
 
@@ -268,7 +347,7 @@ export function ImportZipData(data) {
  */
 export function ListTunnels() {
     return $Call.ByID(3587038916).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType18($result);
+        return $$createType20($result);
     }));
 }
 
@@ -283,7 +362,7 @@ export function ListTunnels() {
  */
 export function ListTunnelsLocal() {
     return $Call.ByID(3031176175).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType18($result);
+        return $$createType20($result);
     }));
 }
 
@@ -317,6 +396,37 @@ export function ReadFile(path) {
 }
 
 /**
+ * ReconcileHistoryFromStatus is the SINGLE source of truth for opening and
+ * closing history sessions. The event bridge calls it on every status event;
+ * it diffs the active set against activeSessions and:
+ * 
+ *   - opens a session for any active tunnel not currently tracked (covers
+ *     both user-initiated Connect and helper-driven auto-reconnect / wifi
+ *     rules engine / sleep-wake)
+ *   - closes a session for any tracked tunnel that has disappeared (using
+ *     cached rx/tx + cached reason from lastKnownStats; falls back to
+ *     disappearReason — defaults to "reconnect")
+ * 
+ * Stats cache is always refreshed for currently-active tunnels so disconnect
+ * closes have ≤ 1 status-event-tick stale counters. Reason hints set by
+ * user-initiated Disconnect / DisconnectTunnel are preserved across cache
+ * refreshes — only LoadAndDelete on close clears them.
+ * 
+ * Fast-path: if the sorted active set hasn't changed since the prior call
+ * (the steady-state case at 1 Hz), we skip the activeSessions Range and the
+ * open-session loop. The stats cache still gets updated so the eventual
+ * disappear-close uses fresh counters.
+ * @param {string[]} activeNames
+ * @param {{ [_ in string]?: number }} rxByTunnel
+ * @param {{ [_ in string]?: number }} txByTunnel
+ * @param {string} disappearReason
+ * @returns {$CancellablePromise<void>}
+ */
+export function ReconcileHistoryFromStatus(activeNames, rxByTunnel, txByTunnel, disappearReason) {
+    return $Call.ByID(1482043575, activeNames, rxByTunnel, txByTunnel, disappearReason);
+}
+
+/**
  * RenameTunnel changes a tunnel's name. Rejects rename of the connected
  * tunnel since the interface name is derived from it.
  * 
@@ -343,7 +453,7 @@ export function RenameTunnel(oldName, newName) {
  */
 export function RunDNSLeakTest() {
     return $Call.ByID(2469114850).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType20($result);
+        return $$createType22($result);
     }));
 }
 
@@ -429,6 +539,24 @@ export function SetPinInterface(enabled) {
 }
 
 /**
+ * SetTunnelNotes persists a freeform note for a tunnel. Empty notes still
+ * write an empty .meta.json — that matches the contract the frontend
+ * expects (write always succeeds, no special-case for "clear").
+ * 
+ * Existence check first to avoid orphaning a .meta.json sidecar after the
+ * .conf was deleted: TunnelDetail's onDestroy can fire-and-forget a
+ * pending-edit flush after the user deletes a tunnel, and writing the
+ * sidecar in that window would leave a stale file the next tunnel-of-the-
+ * same-name would inherit.
+ * @param {string} name
+ * @param {string} notes
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetTunnelNotes(name, notes) {
+    return $Call.ByID(2210192646, name, notes);
+}
+
+/**
  * TunnelExists reports whether a tunnel with the given name is stored.
  * @param {string} name
  * @returns {$CancellablePromise<boolean>}
@@ -456,7 +584,7 @@ export function UpdateConfig(name, content) {
  */
 export function ValidateConfig(content) {
     return $Call.ByID(592398029, content).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType21($result);
+        return $$createType23($result);
     }));
 }
 
@@ -466,20 +594,22 @@ const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = update$0.UpdateInfo.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
 const $$createType4 = wifi$0.SSIDPermissionStatus.createFrom;
-const $$createType5 = $models.KnownSSIDs.createFrom;
-const $$createType6 = $models.RouteEntry.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = storage$0.Settings.createFrom;
-const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = domain$0.ConnectionStatus.createFrom;
+const $$createType5 = storage$0.Session.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = $models.KnownSSIDs.createFrom;
+const $$createType8 = $models.RouteEntry.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = storage$0.Settings.createFrom;
 const $$createType11 = $Create.Nullable($$createType10);
-const $$createType12 = domain$0.WireGuardConfig.createFrom;
+const $$createType12 = domain$0.ConnectionStatus.createFrom;
 const $$createType13 = $Create.Nullable($$createType12);
-const $$createType14 = $models.TunnelInfo.createFrom;
+const $$createType14 = domain$0.WireGuardConfig.createFrom;
 const $$createType15 = $Create.Nullable($$createType14);
-const $$createType16 = $models.ZipImportResult.createFrom;
-const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = $Create.Array($$createType14);
-const $$createType19 = $models.DNSLeakResult.createFrom;
-const $$createType20 = $Create.Nullable($$createType19);
-const $$createType21 = $Create.Array($Create.Any);
+const $$createType16 = $models.TunnelInfo.createFrom;
+const $$createType17 = $Create.Nullable($$createType16);
+const $$createType18 = $models.ZipImportResult.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = $Create.Array($$createType16);
+const $$createType21 = $models.DNSLeakResult.createFrom;
+const $$createType22 = $Create.Nullable($$createType21);
+const $$createType23 = $Create.Array($Create.Any);

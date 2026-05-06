@@ -70,6 +70,11 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	}
 	tunnelStore := storage.NewTunnelStore(paths.TunnelsDir)
 	settingsStore := storage.NewSettingsStore(paths.ConfigDir)
+	historyStore := storage.NewHistoryStore(paths.ConfigDir)
+	// Sweep up sessions left open by a previous crash before the UI has a
+	// chance to read them. Mark "app_quit" so they aren't shown as still-
+	// active in the timeline.
+	historyStore.CloseOpenSessions("app_quit")
 
 	// Apply persisted log level to the GUI side immediately (helper-side
 	// gets it after ensureHelper + the SaveSettings path).
@@ -104,7 +109,7 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	clients := ipc.NewClientHolder(initialClient)
 
 	// 3. Wails service
-	tunnelService := wgapp.NewTunnelService(tunnelStore, settingsStore, clients)
+	tunnelService := wgapp.NewTunnelService(tunnelStore, settingsStore, historyStore, clients)
 
 	// 4. Wails app
 	app := application.New(application.Options{
@@ -139,10 +144,22 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	application.RegisterEvent[ipc.LogEntry]("log")
 
 	// 5. Main window
+	//
+	// Default size: 1200 × 740 — width:height ≈ 1.62, the golden ratio.
+	// Picked over the previous 900 × 680 (ratio 1.32) because that felt
+	// squat after the notes section pushed the detail pane taller. The
+	// extra width gives the 3-pane layout (sidebar 200 + list 240 +
+	// detail flex) ~760 px for the detail pane, which is enough for the
+	// stats grid + info rows + notes textarea + actions row to breathe.
+	//
+	// Min size pins the smallest pretty-looking shape (≈1.44 ratio) while
+	// still leaving the detail pane wide enough that nothing wraps weirdly.
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:          "WireGuide",
-		Width:          900,
-		Height:         680,
+		Width:          1200,
+		Height:         740,
+		MinWidth:       920,
+		MinHeight:      640,
 		EnableFileDrop: true,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
@@ -196,6 +213,10 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	doShutdown = func() {
 		shutdownOnce.Do(func() {
 			slog.Info("shutting down GUI + helper")
+			// Close any in-flight history sessions BEFORE the helper goes
+			// away — snapshotActiveStats needs the helper alive to fetch
+			// last-known rx/tx counters.
+			tunnelService.CloseHistorySessions("app_quit")
 			c := clients.Get()
 			if c != nil {
 				_ = c.Call(ipc.MethodDisconnect, nil, nil)
@@ -227,7 +248,7 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	// process restarts. The health monitor swaps the client in the holder.
 	// Pass the tray's cheap icon-update hook — NOT the full menu rebuild —
 	// so the 1 Hz status stream doesn't trigger IPC round-trips on every event.
-	bridge := newEventBridge(app, clients, trayMgr.setIconState)
+	bridge := newEventBridge(app, clients, trayMgr.setIconState, tunnelService.ReconcileHistoryFromStatus)
 	bridge.start()
 
 	// Push the persisted log level to the helper now that the event

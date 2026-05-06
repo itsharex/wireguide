@@ -9,18 +9,38 @@
   },
   "nav": {
     "tunnels": "Tunnels",
+    "history": "History",
     "tools": "Tools",
     "logs": "Logs",
     "settings": "Settings"
+  },
+  "history": {
+    "title": "Connection History",
+    "no_history": "No connections recorded yet.",
+    "clear": "Clear",
+    "refresh": "Refresh",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "active": "Active",
+    "started": "Started",
+    "ended": "Ended",
+    "confirm_clear_title": "Clear connection history?",
+    "confirm_clear_message": "This permanently removes all session records on this device.",
+    "reason_user": "Disconnected",
+    "reason_reconnect": "Reconnected",
+    "reason_app_quit": "App quit",
+    "reason_health_check": "Auto-recovered",
+    "reason_error": "Error"
   },
   "tunnel": {
     "list_title": "Tunnels",
     "search": "Search...",
     "no_tunnels": "No tunnels configured",
     "no_selection": "Select a tunnel or create a new one",
-    "drop_hint": "Drop a .conf or .zip file here or click Import",
-    "drop_overlay": "Drop .conf or .zip to import",
+    "drop_hint": "Drop a .conf, .zip, or QR image (PNG/JPG) here, or click Import",
+    "drop_overlay": "Drop .conf, .zip, or QR image to import",
     "import": "Import",
+    "import_hint": "Accepts .conf, .zip, or a QR image (PNG/JPG/WebP)",
     "new_tunnel": "New Tunnel",
     "connect": "Connect",
     "disconnect": "Disconnect",
@@ -52,7 +72,9 @@
     "kill_switch": "Kill Switch",
     "dns_protection": "DNS Protection",
     "details": "Details",
-    "rename_hint": "Double-click to rename"
+    "rename_hint": "Double-click to rename",
+    "notes": "Notes",
+    "notes_placeholder": "Freeform notes — endpoint location, credentials hint, etc."
   },
   "import": {
     "title": "Import Tunnel",

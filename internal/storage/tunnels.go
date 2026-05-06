@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,6 +89,11 @@ func (s *TunnelStore) Load(name string) (*config.WireGuardConfig, error) {
 }
 
 // Delete removes a tunnel config from disk.
+//
+// Best-effort meta cleanup: if the .meta.json sidecar exists, remove it
+// alongside. Failure to remove the sidecar never blocks tunnel deletion —
+// a stale meta file would just linger until the same tunnel name is
+// recreated, at which point LoadMeta would surface its old contents.
 func (s *TunnelStore) Delete(name string) error {
 	if err := ValidateTunnelName(name); err != nil {
 		return err
@@ -97,7 +103,9 @@ func (s *TunnelStore) Delete(name string) error {
 	defer s.mu.Unlock()
 
 	path := s.path(name)
-	return os.Remove(path)
+	err := os.Remove(path)
+	_ = os.Remove(s.metaPath(name))
+	return err
 }
 
 // Rename renames a tunnel from oldName to newName.
@@ -151,7 +159,15 @@ func (s *TunnelStore) Rename(oldName, newName string) error {
 	if s.exists(newName) {
 		return fmt.Errorf("tunnel %q already exists", newName)
 	}
-	return os.Rename(oldPath, s.path(newName))
+	if err := os.Rename(oldPath, s.path(newName)); err != nil {
+		return err
+	}
+	// Carry the .meta.json sidecar along — best-effort, never block rename
+	// on missing/unwritable sidecar.
+	if _, err := os.Stat(s.metaPath(oldName)); err == nil {
+		_ = os.Rename(s.metaPath(oldName), s.metaPath(newName))
+	}
+	return nil
 }
 
 // List returns all tunnel names (without .conf extension).
@@ -218,4 +234,125 @@ func (s *TunnelStore) ImportFromContent(name, content string) (*config.WireGuard
 
 func (s *TunnelStore) path(name string) string {
 	return filepath.Join(s.dir, name+".conf")
+}
+
+// TunnelMeta holds per-tunnel metadata stored alongside the .conf file in a
+// .meta.json sidecar. Kept separate from the .conf because WireGuard's config
+// format is shared with other clients (wg-quick, official apps) and embedding
+// app-specific fields as comments would be lost on round-trip through them.
+type TunnelMeta struct {
+	Notes string `json:"notes,omitempty"`
+}
+
+func (s *TunnelStore) metaPath(name string) string {
+	return filepath.Join(s.dir, name+".meta.json")
+}
+
+// LoadMeta reads the .meta.json sidecar. A missing file or a parse error
+// returns empty meta with nil error — the sidecar is purely additive and
+// must never break tunnel listing. RLock matches Load() so a concurrent
+// SaveMeta / Rename / Delete can't race against the read.
+func (s *TunnelStore) LoadMeta(name string) (*TunnelMeta, error) {
+	if err := ValidateTunnelName(name); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.loadMetaLocked(name)
+}
+
+// loadMetaLocked reads the .meta.json sidecar without acquiring the lock.
+// Caller MUST hold s.mu (R or W).
+func (s *TunnelStore) loadMetaLocked(name string) (*TunnelMeta, error) {
+	data, err := os.ReadFile(s.metaPath(name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &TunnelMeta{}, nil
+		}
+		return nil, err
+	}
+	var m TunnelMeta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return &TunnelMeta{}, nil
+	}
+	return &m, nil
+}
+
+// LoadWithMeta loads both the .conf and the .meta.json sidecar under a
+// single RLock so a concurrent Rename can't move the .conf out from under
+// the meta read (or vice-versa) and produce a mismatched pair. The meta
+// load is best-effort — meta-only failures fall back to an empty meta and
+// never propagate as an error from this call.
+func (s *TunnelStore) LoadWithMeta(name string) (*config.WireGuardConfig, *TunnelMeta, error) {
+	if err := ValidateTunnelName(name); err != nil {
+		return nil, nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	path := s.path(name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := config.Parse(string(data))
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing %s: %w", name, err)
+	}
+	cfg.Name = name
+
+	meta, _ := s.loadMetaLocked(name)
+	if meta == nil {
+		meta = &TunnelMeta{}
+	}
+	return cfg, meta, nil
+}
+
+// SaveMeta writes the .meta.json sidecar atomically. Empty meta still writes
+// the file (the caller may want to record an explicit "no notes" state).
+func (s *TunnelStore) SaveMeta(name string, meta *TunnelMeta) error {
+	if err := ValidateTunnelName(name); err != nil {
+		return err
+	}
+	if meta == nil {
+		meta = &TunnelMeta{}
+	}
+
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dst := s.metaPath(name)
+	tmpFile, err := os.CreateTemp(filepath.Dir(dst), ".wireguide-meta-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0600); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := atomicRename(tmpPath, dst); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }

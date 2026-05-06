@@ -12,6 +12,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/korjwl1/wireguide/internal/domain"
@@ -28,16 +29,53 @@ import (
 type TunnelService struct {
 	tunnelStore   *storage.TunnelStore
 	settingsStore *storage.SettingsStore
+	historyStore  *storage.HistoryStore
 	clients       *ipc.ClientHolder
 	app           *application.App
+
+	// activeSessions maps tunnel name → open history session ID. Used by
+	// ReconcileHistoryFromStatus to identify which row to close when a
+	// tunnel disappears from the active set; sync.Map keeps the per-event
+	// lookup lock-free against concurrent Connect / Disconnect.
+	activeSessions sync.Map
+
+	// lastKnownStats caches the most recent rx/tx + reason hint (see
+	// lastKnownTunnelStats) for each currently-active tunnel. The reconcile
+	// path looks this up when a tunnel disappears so the closed history
+	// session reflects real bytes transferred — without it, helper-driven
+	// disconnects (Wi-Fi rule, auto-reconnect cycle, etc.) would record
+	// sessions with rx=0/tx=0 because the disappearance status event itself
+	// doesn't carry the gone tunnel's counters.
+	lastKnownStats sync.Map
+
+	// reconcileMu guards lastReconcileSig — used by ReconcileHistoryFromStatus
+	// to fast-skip the active-set diff when nothing changed since the prior
+	// status event. The status stream is 1 Hz; without the skip every event
+	// would walk the activeSessions sync.Map even in the steady state.
+	reconcileMu      sync.Mutex
+	lastReconcileSig string
+}
+
+// lastKnownTunnelStats is the value type for TunnelService.lastKnownStats.
+//
+// reason is a hint set by user-initiated Disconnect / DisconnectTunnel
+// before the IPC tear-down call. Reconcile reads it on close so the
+// resulting history row is labelled "user" instead of the default
+// "reconnect" — without this, every user disconnect would look
+// indistinguishable from a helper-driven one in the timeline.
+type lastKnownTunnelStats struct {
+	rx     int64
+	tx     int64
+	reason string
 }
 
 // NewTunnelService creates a service. Set the app reference via SetApp()
 // after application.New() for dialog support.
-func NewTunnelService(ts *storage.TunnelStore, ss *storage.SettingsStore, clients *ipc.ClientHolder) *TunnelService {
+func NewTunnelService(ts *storage.TunnelStore, ss *storage.SettingsStore, hs *storage.HistoryStore, clients *ipc.ClientHolder) *TunnelService {
 	return &TunnelService{
 		tunnelStore:   ts,
 		settingsStore: ss,
+		historyStore:  hs,
 		clients:       clients,
 	}
 }
@@ -87,6 +125,7 @@ type TunnelInfo struct {
 	Name        string `json:"name"`
 	IsConnected bool   `json:"is_connected"`
 	Endpoint    string `json:"endpoint"`
+	Notes       string `json:"notes,omitempty"`
 }
 
 // ConnectionStatus is re-exported from the domain package so Wails bindings

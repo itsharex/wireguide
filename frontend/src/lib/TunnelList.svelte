@@ -65,7 +65,7 @@
     <button class="btn btn-primary" on:click={() => dispatch('new')}>
       + {$t('tunnel.new_tunnel')}
     </button>
-    <button class="btn btn-secondary" on:click={() => dispatch('import')}>
+    <button class="btn btn-secondary" on:click={() => dispatch('import')} title={$t('tunnel.import_hint')}>
       ↓ {$t('tunnel.import')}
     </button>
   </div>

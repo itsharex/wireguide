@@ -7,6 +7,7 @@
   import ConfigEditor from './lib/ConfigEditor.svelte';
   import Settings from './lib/Settings.svelte';
   import LogViewer from './lib/LogViewer.svelte';
+  import History from './lib/History.svelte';
   import DNSLeakTest from './lib/DNSLeakTest.svelte';
   import RouteVisualization from './lib/RouteVisualization.svelte';
   import StatsDashboard from './lib/StatsDashboard.svelte';
@@ -19,7 +20,7 @@
   import { TunnelService } from '../bindings/github.com/korjwl1/wireguide/internal/app';
 
   // View state
-  let currentView = 'tunnels'; // 'tunnels' | 'dnsleak' | 'routes' | 'logs'
+  let currentView = 'tunnels'; // 'tunnels' | 'history' | 'dnsleak' | 'routes' | 'logs'
 
   $: isToolsView = currentView === 'dnsleak' || currentView === 'routes';
 
@@ -113,12 +114,15 @@
       const payload = event.data || {};
       const paths = payload.files || [];
       for (const path of paths) {
-        if (path.toLowerCase().endsWith('.conf')) {
+        const lower = path.toLowerCase();
+        if (lower.endsWith('.conf')) {
           await importFromPath(path);
-        } else if (path.toLowerCase().endsWith('.zip')) {
+        } else if (lower.endsWith('.zip')) {
           await importZipFromPath(path);
+        } else if (/\.(png|jpe?g|webp)$/.test(lower)) {
+          await importQRFromPath(path);
         } else {
-          showToast('Only .conf and .zip files are supported');
+          showToast('Only .conf, .zip, and QR image files are supported');
         }
       }
     });
@@ -185,14 +189,30 @@
     toastTimer = setTimeout(() => { toast = ''; toastTimer = null; }, 3000);
   }
 
+  // sanitizeImportName maps an arbitrary filename stem to something
+  // ValidateTunnelName will accept — letters, digits, '-', '_', spaces only.
+  // Phone screenshots and shared QR images often have names like
+  // "Some QR (1).png" or "WG · backup.png" that the validator would reject;
+  // refusing the import outright is worse UX than auto-cleaning the name.
+  function sanitizeImportName(raw) {
+    if (!raw) return 'tunnel';
+    let s = raw.replace(/[^A-Za-z0-9\-_ ]+/g, '-')
+               .replace(/-{2,}/g, '-')
+               .replace(/^[-\s]+|[-\s]+$/g, '');
+    if (s.length > 64) s = s.slice(0, 64).replace(/[-\s]+$/g, '');
+    return s || 'tunnel';
+  }
+
   // Generate a unique tunnel name by appending -1, -2, etc. if needed.
+  // The base is sanitised first so callers can pass a raw filename stem.
   async function uniqueName(baseName) {
-    if (!(await TunnelService.TunnelExists(baseName))) return baseName;
+    const cleaned = sanitizeImportName(baseName);
+    if (!(await TunnelService.TunnelExists(cleaned))) return cleaned;
     for (let i = 1; i < 1000; i++) {
-      const candidate = `${baseName}-${i}`;
+      const candidate = `${cleaned}-${i}`;
       if (!(await TunnelService.TunnelExists(candidate))) return candidate;
     }
-    return baseName + '-' + Date.now();
+    return cleaned + '-' + Date.now();
   }
 
   // Show zip import result modal.
@@ -254,6 +274,44 @@
     }
   }
 
+  // Import a QR-coded WireGuard config from an image at a filesystem path
+  // (native file drop). Backend reads the file directly so we don't have to
+  // shuttle the bytes through JS for the common drop path.
+  async function importQRFromPath(path) {
+    try {
+      const baseName = await TunnelService.BaseName(path);
+      const name = await uniqueName(baseName || 'tunnel');
+      await TunnelService.ImportQRFromPath(path, name);
+      showToast(`Imported "${name}"`);
+      await refreshTunnels(TunnelService);
+    } catch (e) {
+      showToast('QR import failed: ' + errText(e));
+    }
+  }
+
+  // Import from a browser File object representing an image with a QR code.
+  // Encodes the bytes as base64 (Wails serialises []byte that way) using the
+  // same chunked approach as importZipFromFile to avoid call-stack blowups.
+  async function importQRFromFile(file) {
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const CHUNK = 8192;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      const baseName = file.name.replace(/\.[^.]+$/, '') || 'tunnel';
+      const name = await uniqueName(baseName);
+      await TunnelService.ImportQRFromBytes(btoa(binary), name);
+      showToast(`Imported "${name}"`);
+      await refreshTunnels(TunnelService);
+    } catch (e) {
+      showToast('QR import failed: ' + errText(e));
+    }
+  }
+
   // Import from a browser File object (used by file picker button).
   async function importFile(file) {
     if (!file) return;
@@ -278,12 +336,15 @@
     // Directly open the native file picker — no modal needed.
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.conf,.zip';
+    input.accept = '.conf,.zip,.png,.jpg,.jpeg,.webp';
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      if (file.name.toLowerCase().endsWith('.zip')) {
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.zip')) {
         await importZipFromFile(file);
+      } else if (/\.(png|jpe?g|webp)$/.test(lower)) {
+        await importQRFromFile(file);
       } else {
         await importFile(file);
       }
@@ -500,6 +561,9 @@
       <button class="nav-item" class:active={currentView === 'tunnels'} on:click={() => currentView = 'tunnels'}>
         <span class="nav-icon">◎</span> {$t('nav.tunnels')}
       </button>
+      <button class="nav-item" class:active={currentView === 'history'} on:click={() => currentView = 'history'}>
+        <span class="nav-icon">⌚</span> {$t('nav.history')}
+      </button>
       <button class="nav-item nav-section" class:section-active={isToolsView} on:click={() => currentView = 'dnsleak'}>
         <span class="nav-icon">◈</span> {$t('nav.tools')}
       </button>
@@ -548,7 +612,7 @@
                 <p>{$t('tunnel.no_selection')}</p>
                 <div class="empty-actions">
                   <button class="btn-primary" on:click={handleNewTunnelOpen}>+ {$t('tunnel.new_tunnel')}</button>
-                  <button class="btn-secondary" on:click={handleImportOpen}>↓ {$t('tunnel.import')}</button>
+                  <button class="btn-secondary" on:click={handleImportOpen} title={$t('tunnel.import_hint')}>↓ {$t('tunnel.import')}</button>
                 </div>
               </div>
             {/if}
@@ -565,6 +629,10 @@
       {:else if currentView === 'logs'}
         <div class="logs-view">
           <LogViewer />
+        </div>
+      {:else if currentView === 'history'}
+        <div class="logs-view">
+          <History {TunnelService} />
         </div>
       {/if}
     </div>

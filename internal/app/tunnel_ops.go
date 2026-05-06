@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/korjwl1/wireguide/internal/domain"
@@ -25,7 +26,7 @@ func (s *TunnelService) ListTunnelsLocal() ([]TunnelInfo, error) {
 	}
 	var result []TunnelInfo
 	for _, name := range names {
-		cfg, err := s.tunnelStore.Load(name)
+		cfg, meta, err := s.tunnelStore.LoadWithMeta(name)
 		if err != nil {
 			slog.Warn("skipping broken tunnel config", "name", name, "error", err)
 			continue
@@ -34,12 +35,33 @@ func (s *TunnelService) ListTunnelsLocal() ([]TunnelInfo, error) {
 		if len(cfg.Peers) > 0 {
 			endpoint = cfg.Peers[0].Endpoint
 		}
+		notes := ""
+		if meta != nil {
+			notes = meta.Notes
+		}
 		result = append(result, TunnelInfo{
 			Name:     name,
 			Endpoint: endpoint,
+			Notes:    notes,
 		})
 	}
 	return result, nil
+}
+
+// SetTunnelNotes persists a freeform note for a tunnel. Empty notes still
+// write an empty .meta.json — that matches the contract the frontend
+// expects (write always succeeds, no special-case for "clear").
+//
+// Existence check first to avoid orphaning a .meta.json sidecar after the
+// .conf was deleted: TunnelDetail's onDestroy can fire-and-forget a
+// pending-edit flush after the user deletes a tunnel, and writing the
+// sidecar in that window would leave a stale file the next tunnel-of-the-
+// same-name would inherit.
+func (s *TunnelService) SetTunnelNotes(name, notes string) error {
+	if !s.tunnelStore.Exists(name) {
+		return fmt.Errorf("tunnel %q does not exist", name)
+	}
+	return s.tunnelStore.SaveMeta(name, &storage.TunnelMeta{Notes: notes})
 }
 
 // ListTunnels returns every stored tunnel with its summary info.
@@ -65,7 +87,7 @@ func (s *TunnelService) ListTunnels() ([]TunnelInfo, error) {
 
 	var result []TunnelInfo
 	for _, name := range names {
-		cfg, err := s.tunnelStore.Load(name)
+		cfg, meta, err := s.tunnelStore.LoadWithMeta(name)
 		if err != nil {
 			slog.Warn("skipping broken tunnel config", "name", name, "error", err)
 			continue
@@ -74,10 +96,15 @@ func (s *TunnelService) ListTunnels() ([]TunnelInfo, error) {
 		if len(cfg.Peers) > 0 {
 			endpoint = cfg.Peers[0].Endpoint
 		}
+		notes := ""
+		if meta != nil {
+			notes = meta.Notes
+		}
 		result = append(result, TunnelInfo{
 			Name:        name,
 			IsConnected: name == active.Value,
 			Endpoint:    endpoint,
+			Notes:       notes,
 		})
 	}
 	return result, nil
@@ -107,6 +134,12 @@ func (s *TunnelService) CheckConflicts(name string) ([]tunnel.ConflictInfo, erro
 
 // Connect loads a tunnel config from local storage and asks the helper to
 // bring it up. The helper re-validates server-side.
+//
+// Session lifecycle is owned entirely by ReconcileHistoryFromStatus —
+// opening here would race the helper's StateConnecting status broadcast,
+// which already includes the tunnel name in ActiveTunnels. The race
+// produced spurious "Reconnected" rows on every user-initiated connect
+// before this was unified.
 func (s *TunnelService) Connect(name string) error {
 	cfg, err := s.tunnelStore.Load(name)
 	if err != nil {
@@ -127,13 +160,30 @@ func (s *TunnelService) Connect(name string) error {
 // Disconnect tears down whatever tunnel the helper currently has active.
 // If the call fails with a "client closed" error (the health monitor may have
 // swapped the client during a recovery), retry once with the fresh client.
+//
+// We mark lastKnownStats with reason "user" so the upcoming Reconcile (after
+// the next status event with the tunnel gone) labels the closed session as
+// a user disconnect. Existing fresh rx/tx counters from Reconcile's per-tick
+// refresh are preserved — markUserDisconnect overwrites only the reason,
+// not the bytes. This is what protects against rapid double-clicks: the
+// second Disconnect's snapshot may be 0/0 (helper already tearing down)
+// but the cache still holds the fresh values from the steady state.
 func (s *TunnelService) Disconnect() error {
+	name, rx, tx := s.snapshotActiveStats("")
+	s.markUserDisconnect(name, rx, tx)
+
 	s.clients.MarkInflight()
 	defer s.clients.UnmarkInflight()
 	err := s.callLong(ipc.MethodDisconnect, nil, nil)
 	if err != nil && isClientClosed(err) {
 		slog.Info("disconnect got client-closed, retrying with fresh client")
 		err = s.callLong(ipc.MethodDisconnect, nil, nil)
+	}
+	if err != nil {
+		// IPC failed — the "user" hint is suspect (helper might still
+		// have the tunnel up). Clear the hint, KEEP the rx/tx so a
+		// genuine helper-driven close still has accurate counters.
+		s.clearUserDisconnect(name)
 	}
 	return err
 }
@@ -144,6 +194,9 @@ func (s *TunnelService) Disconnect() error {
 // item right when the health monitor swaps clients) should be
 // transparent, not surfaced as a confusing error.
 func (s *TunnelService) DisconnectTunnel(name string) error {
+	_, rx, tx := s.snapshotActiveStats(name)
+	s.markUserDisconnect(name, rx, tx)
+
 	s.clients.MarkInflight()
 	defer s.clients.UnmarkInflight()
 	err := s.callLong(ipc.MethodDisconnect, ipc.DisconnectRequest{TunnelName: name}, nil)
@@ -152,7 +205,279 @@ func (s *TunnelService) DisconnectTunnel(name string) error {
 			"tunnel", name)
 		err = s.callLong(ipc.MethodDisconnect, ipc.DisconnectRequest{TunnelName: name}, nil)
 	}
+	if err != nil {
+		s.clearUserDisconnect(name)
+	}
 	return err
+}
+
+// markUserDisconnect sets the reason hint on a tunnel's lastKnownStats to
+// "user", preserving any rx/tx the Reconcile-driven cache refresh has
+// already recorded. snapRx/snapTx is a fallback for the cold case (no
+// cache entry yet — first Disconnect before any status event was reconciled).
+func (s *TunnelService) markUserDisconnect(name string, snapRx, snapTx int64) {
+	if name == "" {
+		return
+	}
+	if cached, ok := s.lastKnownStats.Load(name); ok {
+		if st, ok := cached.(lastKnownTunnelStats); ok {
+			s.lastKnownStats.Store(name, lastKnownTunnelStats{rx: st.rx, tx: st.tx, reason: "user"})
+			return
+		}
+	}
+	s.lastKnownStats.Store(name, lastKnownTunnelStats{rx: snapRx, tx: snapTx, reason: "user"})
+}
+
+// clearUserDisconnect removes the "user" reason hint after a failed
+// Disconnect IPC, leaving rx/tx intact. Other reasons (or empty) are left
+// alone — only the hint we set ourselves is cleared.
+func (s *TunnelService) clearUserDisconnect(name string) {
+	if name == "" {
+		return
+	}
+	if cached, ok := s.lastKnownStats.Load(name); ok {
+		if st, ok := cached.(lastKnownTunnelStats); ok && st.reason == "user" {
+			s.lastKnownStats.Store(name, lastKnownTunnelStats{rx: st.rx, tx: st.tx, reason: ""})
+		}
+	}
+}
+
+// snapshotActiveStats returns (tunnelName, rx, tx) for the tunnel about to
+// disconnect. Empty wantName picks the primary active tunnel. Returns zero
+// values on any error — capturing stats is best-effort and never blocks
+// disconnect.
+func (s *TunnelService) snapshotActiveStats(wantName string) (string, int64, int64) {
+	status, err := s.GetStatus()
+	if err != nil || status == nil {
+		return wantName, 0, 0
+	}
+	if wantName == "" {
+		if status.TunnelName != "" {
+			return status.TunnelName, status.RxBytes, status.TxBytes
+		}
+		if len(status.Tunnels) > 0 {
+			t := status.Tunnels[0]
+			return t.TunnelName, t.RxBytes, t.TxBytes
+		}
+		return "", 0, 0
+	}
+	if status.TunnelName == wantName {
+		return wantName, status.RxBytes, status.TxBytes
+	}
+	for _, t := range status.Tunnels {
+		if t.TunnelName == wantName {
+			return wantName, t.RxBytes, t.TxBytes
+		}
+	}
+	return wantName, 0, 0
+}
+
+// ReconcileHistoryFromStatus is the SINGLE source of truth for opening and
+// closing history sessions. The event bridge calls it on every status event;
+// it diffs the active set against activeSessions and:
+//
+//   - opens a session for any active tunnel not currently tracked (covers
+//     both user-initiated Connect and helper-driven auto-reconnect / wifi
+//     rules engine / sleep-wake)
+//   - closes a session for any tracked tunnel that has disappeared (using
+//     cached rx/tx + cached reason from lastKnownStats; falls back to
+//     disappearReason — defaults to "reconnect")
+//
+// Stats cache is always refreshed for currently-active tunnels so disconnect
+// closes have ≤ 1 status-event-tick stale counters. Reason hints set by
+// user-initiated Disconnect / DisconnectTunnel are preserved across cache
+// refreshes — only LoadAndDelete on close clears them.
+//
+// Fast-path: if the sorted active set hasn't changed since the prior call
+// (the steady-state case at 1 Hz), we skip the activeSessions Range and the
+// open-session loop. The stats cache still gets updated so the eventual
+// disappear-close uses fresh counters.
+func (s *TunnelService) ReconcileHistoryFromStatus(activeNames []string, rxByTunnel, txByTunnel map[string]int64, disappearReason string) {
+	if s.historyStore == nil {
+		return
+	}
+	if disappearReason == "" {
+		disappearReason = "reconnect"
+	}
+	active := make(map[string]struct{}, len(activeNames))
+	for _, n := range activeNames {
+		if n != "" {
+			active[n] = struct{}{}
+		}
+	}
+
+	// Refresh cache for currently-active tunnels. Always done — even on the
+	// fast path — so the next disappearance close sees fresh stats. Preserve
+	// any reason hint already in the cache (set by Disconnect/DisconnectTunnel
+	// before the IPC call).
+	for name := range active {
+		var rx, tx int64
+		if rxByTunnel != nil {
+			rx = rxByTunnel[name]
+		}
+		if txByTunnel != nil {
+			tx = txByTunnel[name]
+		}
+		reason := ""
+		if cached, ok := s.lastKnownStats.Load(name); ok {
+			if st, ok := cached.(lastKnownTunnelStats); ok {
+				reason = st.reason
+			}
+		}
+		s.lastKnownStats.Store(name, lastKnownTunnelStats{rx: rx, tx: tx, reason: reason})
+	}
+
+	// Build a stable signature of the active set and compare to the prior
+	// one. If unchanged, we know there are no new appearances or
+	// disappearances to record. The cache update above handles the steady
+	// state; this skip just avoids the (cheap but constant) diff work at 1 Hz.
+	sig := activeSetSignature(activeNames)
+	s.reconcileMu.Lock()
+	unchanged := sig == s.lastReconcileSig
+	s.lastReconcileSig = sig
+	s.reconcileMu.Unlock()
+	if unchanged {
+		return
+	}
+
+	s.activeSessions.Range(func(k, v any) bool {
+		name, _ := k.(string)
+		id, _ := v.(string)
+		if _, stillActive := active[name]; stillActive {
+			return true
+		}
+		if id != "" {
+			var rx, tx int64
+			reason := disappearReason
+			// Prefer cached last-seen counters and reason — the current event's
+			// maps don't include this tunnel since it just disappeared, and a
+			// pre-set reason from user Disconnect overrides the default.
+			if cached, ok := s.lastKnownStats.LoadAndDelete(name); ok {
+				if st, ok := cached.(lastKnownTunnelStats); ok {
+					rx = st.rx
+					tx = st.tx
+					if st.reason != "" {
+						reason = st.reason
+					}
+				}
+			}
+			s.historyStore.RecordDisconnect(id, rx, tx, reason)
+		}
+		s.activeSessions.Delete(k)
+		return true
+	})
+
+	for _, name := range activeNames {
+		if name == "" {
+			continue
+		}
+		if _, exists := s.activeSessions.Load(name); exists {
+			continue
+		}
+		id := s.historyStore.RecordConnect(name)
+		s.activeSessions.Store(name, id)
+	}
+}
+
+// activeSetSignature returns a stable string representation of activeNames
+// suitable for equality comparison across status events. Sorted so the
+// helper's order is irrelevant; null byte separator avoids collisions
+// between names like ["a", "bc"] and ["ab", "c"].
+func activeSetSignature(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	cp := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != "" {
+			cp = append(cp, n)
+		}
+	}
+	sort.Strings(cp)
+	return strings.Join(cp, "\x00")
+}
+
+// CloseHistorySessions closes any open history sessions with the given reason.
+// Called from gui.Run during shutdown so the UI doesn't show phantom "Active"
+// rows after a quit.
+//
+// Single GetStatus probe — the previous one-IPC-per-session pattern made
+// shutdown latency scale linearly with active tunnel count. The status
+// response carries every active tunnel's rx/tx, so one round-trip is enough.
+// Falls back to the lastKnownStats cache (and ultimately zeros) when the
+// helper is already unreachable. Skipped entirely when no sessions are open
+// (the common quit-while-disconnected case) so shutdown stays snappy.
+func (s *TunnelService) CloseHistorySessions(reason string) {
+	if s.historyStore == nil {
+		return
+	}
+	hasOpen := false
+	s.activeSessions.Range(func(_, _ any) bool {
+		hasOpen = true
+		return false // first hit is enough
+	})
+	if !hasOpen {
+		// Still call CloseOpenSessions: a previous crash could have left
+		// open rows in the file that the GUI never tracked.
+		s.historyStore.CloseOpenSessions(reason)
+		return
+	}
+	rxByTunnel := make(map[string]int64)
+	txByTunnel := make(map[string]int64)
+	if status, err := s.GetStatus(); err == nil && status != nil {
+		if status.TunnelName != "" {
+			rxByTunnel[status.TunnelName] = status.RxBytes
+			txByTunnel[status.TunnelName] = status.TxBytes
+		}
+		for _, ts := range status.Tunnels {
+			rxByTunnel[ts.TunnelName] = ts.RxBytes
+			txByTunnel[ts.TunnelName] = ts.TxBytes
+		}
+	}
+	s.activeSessions.Range(func(k, v any) bool {
+		name, _ := k.(string)
+		id, _ := v.(string)
+		if id != "" {
+			rx, tx := rxByTunnel[name], txByTunnel[name]
+			// Fall back to last-known cache when the helper status
+			// didn't include this tunnel (e.g. helper already torn
+			// down the interface but the GUI's session map is fresh).
+			if rx == 0 && tx == 0 {
+				if cached, ok := s.lastKnownStats.Load(name); ok {
+					if st, ok := cached.(lastKnownTunnelStats); ok {
+						rx, tx = st.rx, st.tx
+					}
+				}
+			}
+			s.historyStore.RecordDisconnect(id, rx, tx, reason)
+		}
+		s.activeSessions.Delete(k)
+		s.lastKnownStats.Delete(k)
+		return true
+	})
+	s.historyStore.CloseOpenSessions(reason)
+}
+
+// GetConnectionHistory returns recorded sessions newest-first. Always returns
+// a non-nil slice so the frontend doesn't have to special-case "no history
+// yet" vs. "load failed".
+func (s *TunnelService) GetConnectionHistory() ([]storage.Session, error) {
+	if s.historyStore == nil {
+		return []storage.Session{}, nil
+	}
+	out := s.historyStore.GetAll()
+	if out == nil {
+		out = []storage.Session{}
+	}
+	return out, nil
+}
+
+// ClearConnectionHistory wipes the history file.
+func (s *TunnelService) ClearConnectionHistory() error {
+	if s.historyStore == nil {
+		return nil
+	}
+	return s.historyStore.Clear()
 }
 
 // isClientClosed returns true for errors caused by the IPC client being closed

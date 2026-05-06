@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,94 +12,175 @@ import (
 	"time"
 )
 
-// SessionRecord stores a completed VPN session.
-type SessionRecord struct {
-	TunnelName string    `json:"tunnel_name"`
-	StartTime  time.Time `json:"start_time"`
-	EndTime    time.Time `json:"end_time"`
-	TotalRx    int64     `json:"total_rx"`
-	TotalTx    int64     `json:"total_tx"`
+// HistoryMaxRecords caps the rolling session log. Hard-coded rather than
+// configurable: the file lives in the user's config directory and the cap
+// keeps it small enough that GetAll() can deserialise on every UI open
+// without paginating.
+const HistoryMaxRecords = 200
+
+// Session is one VPN session record. EndTime is a pointer so a still-active
+// session (no end yet) can be distinguished from a completed session that
+// happens to have ended at time.Time{} — the previous flat-struct design
+// couldn't tell those apart and showed phantom "0s" rows in the UI when the
+// helper was killed mid-connect before the disconnect path could write
+// final stats.
+type Session struct {
+	ID               string     `json:"id"`
+	TunnelName       string     `json:"tunnel_name"`
+	StartTime        time.Time  `json:"start_time"`
+	EndTime          *time.Time `json:"end_time,omitempty"`
+	DurationSec      int64      `json:"duration_sec"`
+	RxBytes          int64      `json:"rx_bytes"`
+	TxBytes          int64      `json:"tx_bytes"`
+	DisconnectReason string     `json:"disconnect_reason,omitempty"`
 }
 
-// HistoryStore manages connection history.
+// HistoryStore persists Sessions to history.json with a rolling cap.
+//
+// Concurrency: a single mutex guards both the in-memory list and the file —
+// Connect / Disconnect / Reconcile can race in multi-tunnel scenarios so
+// every public method takes the lock. All disk writes go through atomicRename
+// so a crash during save can never leave a half-written file.
 type HistoryStore struct {
-	mu      sync.Mutex
-	path    string
-	maxSize int
+	mu   sync.Mutex
+	path string
 }
 
-// NewHistoryStore creates a history store.
-func NewHistoryStore(configDir string, maxRecords int) *HistoryStore {
-	if maxRecords < 1 {
-		maxRecords = 1
-	}
-	return &HistoryStore{
-		path:    filepath.Join(configDir, "history.json"),
-		maxSize: maxRecords,
-	}
+// NewHistoryStore creates a store backed by configDir/history.json.
+func NewHistoryStore(configDir string) *HistoryStore {
+	return &HistoryStore{path: filepath.Join(configDir, "history.json")}
 }
 
-// Add appends a session record.
-func (h *HistoryStore) Add(record SessionRecord) error {
+// RecordConnect opens a new session for tunnelName, appends it, and returns
+// the generated ID. Disk failures are logged at warn — recording is
+// best-effort and never blocks connect.
+func (h *HistoryStore) RecordConnect(tunnelName string) string {
+	id := newSessionID()
+	now := time.Now()
+	session := Session{
+		ID:         id,
+		TunnelName: tunnelName,
+		StartTime:  now,
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	records, err := h.load()
-	if err != nil {
-		if os.IsPermission(err) {
-			return fmt.Errorf("history file permission denied: %w", err)
-		}
-		if !os.IsNotExist(err) {
-			slog.Warn("history file corrupted, starting fresh", "error", err)
-			records = nil
-		}
+
+	sessions := h.loadLocked()
+	sessions = append(sessions, session)
+	sessions = trimSessions(sessions)
+	if err := h.saveLocked(sessions); err != nil {
+		slog.Warn("history: record connect failed", "tunnel", tunnelName, "error", err)
 	}
-	records = append(records, record)
-	if len(records) > h.maxSize {
-		records = records[len(records)-h.maxSize:]
-	}
-	return h.save(records)
+	return id
 }
 
-// Load reads all session records.
-func (h *HistoryStore) Load() ([]SessionRecord, error) {
+// RecordDisconnect closes an open session by ID. If the ID is unknown
+// (history file was cleared, session not found, etc.) the call is a no-op.
+//
+// Phantom drop: a 0-duration / 0-byte completion is removed entirely rather
+// than recorded. Those come from interrupted bootstraps and helper restarts
+// — keeping them just clutters the timeline with empty rows.
+func (h *HistoryStore) RecordDisconnect(id string, rx, tx int64, reason string) {
+	if id == "" {
+		return
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.load()
+
+	sessions := h.loadLocked()
+	now := time.Now()
+	changed := false
+	for i := range sessions {
+		if sessions[i].ID != id || sessions[i].EndTime != nil {
+			continue
+		}
+		dur := int64(now.Sub(sessions[i].StartTime).Seconds())
+		if dur < 0 {
+			dur = 0
+		}
+		if dur == 0 && rx == 0 && tx == 0 {
+			sessions = append(sessions[:i], sessions[i+1:]...)
+			changed = true
+			break
+		}
+		end := now
+		sessions[i].EndTime = &end
+		sessions[i].DurationSec = dur
+		sessions[i].RxBytes = rx
+		sessions[i].TxBytes = tx
+		sessions[i].DisconnectReason = reason
+		changed = true
+		break
+	}
+	if !changed {
+		return
+	}
+	if err := h.saveLocked(sessions); err != nil {
+		slog.Warn("history: record disconnect failed", "id", id, "error", err)
+	}
 }
 
-// load is the internal unlocked version of Load.
-func (h *HistoryStore) load() ([]SessionRecord, error) {
-	data, err := os.ReadFile(h.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+// CloseOpenSessions closes every session that still has nil EndTime — used
+// at app start (to clean up sessions left open by a previous crash) and at
+// shutdown. 0-duration open sessions are dropped rather than recorded.
+func (h *HistoryStore) CloseOpenSessions(reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	sessions := h.loadLocked()
+	now := time.Now()
+	changed := false
+	kept := sessions[:0]
+	for i := range sessions {
+		if sessions[i].EndTime == nil {
+			dur := int64(now.Sub(sessions[i].StartTime).Seconds())
+			if dur < 0 {
+				dur = 0
+			}
+			if dur == 0 {
+				changed = true
+				continue
+			}
+			end := now
+			sessions[i].EndTime = &end
+			sessions[i].DurationSec = dur
+			sessions[i].DisconnectReason = reason
+			changed = true
 		}
-		return nil, err
+		kept = append(kept, sessions[i])
 	}
-	var records []SessionRecord
-	if err := json.Unmarshal(data, &records); err != nil {
-		// Mirror settings.go's hardening: rename the corrupt file
-		// to <path>.corrupt before discarding so the user can
-		// recover (or we can debug) the original. Without this,
-		// the next Add call's append-then-write silently truncated
-		// the corrupted history to a single new record.
-		corruptPath := h.path + ".corrupt"
-		if renameErr := os.Rename(h.path, corruptPath); renameErr != nil {
-			slog.Warn("history file corrupt; could not back up",
-				"path", h.path, "error", err, "rename_error", renameErr)
-		} else {
-			slog.Warn("history file corrupt; backed up before resetting",
-				"path", h.path, "backup", corruptPath, "error", err)
-		}
-		return nil, err
+	sessions = kept
+	if !changed {
+		return
 	}
-	return records, nil
+	if err := h.saveLocked(sessions); err != nil {
+		slog.Warn("history: close-open save failed", "error", err)
+	}
 }
 
-// Clear removes all history. Returns nil if the file doesn't exist.
+// GetAll returns sessions newest-first. Stale 0-duration / 0-byte completed
+// rows from older crashes are filtered out so the user never sees a phantom.
+func (h *HistoryStore) GetAll() []Session {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	sessions := h.loadLocked()
+	out := make([]Session, 0, len(sessions))
+	for i := len(sessions) - 1; i >= 0; i-- {
+		s := sessions[i]
+		if s.EndTime != nil && s.DurationSec == 0 && s.RxBytes == 0 && s.TxBytes == 0 {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// Clear removes the history file entirely. Returns nil if it doesn't exist.
 func (h *HistoryStore) Clear() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
 	err := os.Remove(h.path)
 	if err != nil && os.IsNotExist(err) {
 		return nil
@@ -105,15 +188,44 @@ func (h *HistoryStore) Clear() error {
 	return err
 }
 
-func (h *HistoryStore) save(records []SessionRecord) error {
-	data, err := json.MarshalIndent(records, "", "  ")
+// loadLocked reads history.json. Missing file → empty slice. Parse error →
+// rename to <path>.corrupt and start fresh, mirroring settings.go's
+// hardening so a corrupt history is preserved for debugging instead of
+// silently truncated by the next Add.
+func (h *HistoryStore) loadLocked() []Session {
+	data, err := os.ReadFile(h.path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("history: read failed", "error", err)
+		}
+		return nil
+	}
+	var sessions []Session
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		corruptPath := h.path + ".corrupt"
+		if renameErr := os.Rename(h.path, corruptPath); renameErr != nil {
+			slog.Warn("history: corrupt file; could not back up",
+				"path", h.path, "error", err, "rename_error", renameErr)
+		} else {
+			slog.Warn("history: corrupt file; backed up before resetting",
+				"path", h.path, "backup", corruptPath, "error", err)
+		}
+		return nil
+	}
+	return sessions
+}
+
+// saveLocked atomically writes sessions with 0600 perms.
+func (h *HistoryStore) saveLocked(sessions []Session) error {
+	data, err := json.MarshalIndent(sessions, "", "  ")
 	if err != nil {
 		return err
 	}
-	// Atomic write + private permissions (history may include tunnel names
-	// and timestamps that are user-sensitive on multi-user systems).
-	// Use os.CreateTemp to avoid predictable temp file names.
-	tmpFile, err := os.CreateTemp(filepath.Dir(h.path), ".wireguide-*.tmp")
+	dir := filepath.Dir(h.path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	tmpFile, err := os.CreateTemp(dir, ".wireguide-history-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -141,4 +253,24 @@ func (h *HistoryStore) save(records []SessionRecord) error {
 		return err
 	}
 	return nil
+}
+
+// trimSessions keeps only the last HistoryMaxRecords entries (oldest-first
+// → drop from the front).
+func trimSessions(sessions []Session) []Session {
+	if len(sessions) <= HistoryMaxRecords {
+		return sessions
+	}
+	return sessions[len(sessions)-HistoryMaxRecords:]
+}
+
+// newSessionID returns a 16-hex-char random ID. crypto/rand failure falls
+// back to a timestamp so the ID is never empty (an empty ID disables the
+// disconnect-side lookup).
+func newSessionID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("ts-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }

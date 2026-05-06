@@ -191,7 +191,13 @@ type trayManager struct {
 	activeTunnels map[string]bool // cached from status events
 	hasHandshake  map[string]bool // per-tunnel handshake status
 	rebuildTimer  *time.Timer     // debounce timer for rebuildMenu
-	rebuilding    atomic.Bool     // guard against concurrent rebuildMenu calls
+	// rebuildMu serialises rebuildMenu calls. The OnClick path needs to
+	// know the rebuild has actually completed before it calls OpenMenu so
+	// the menu can't open with stale items — a mutex is the simplest way
+	// to make it block until it's that path's turn. Status-driven rebuilds
+	// queue behind it harmlessly; rebuilds are sub-ms so the queue never
+	// grows past one or two entries in practice.
+	rebuildMu sync.Mutex
 	// quitting flips to true the moment Quit is clicked. Both the
 	// debounce AfterFunc and the rebuildMenu body short-circuit when
 	// set, so a late-firing timer can't call SetMenu on a tray that
@@ -209,9 +215,25 @@ func newTrayManager(app *application.App, win *application.WebviewWindow, tray *
 	}
 }
 
-// initialBuild draws the menu once at startup.
+// initialBuild draws the menu once at startup, then registers an OnClick
+// handler that rebuilds the menu before every open. The reactive
+// status-driven rebuild (via setIconState) keeps the menu warm between
+// events so opening it is instantaneous; this OnClick path guarantees the
+// menu is fresh even when state changed in the small window between the
+// last status event and the click. Without it, users occasionally saw a
+// stale connection glyph for ~1s after a fast disconnect/connect cycle.
 func (t *trayManager) initialBuild() {
 	t.rebuildMenu()
+	t.tray.OnClick(func() {
+		// Run rebuild in a goroutine: OnClick fires on the AppKit main
+		// thread, and rebuildMenu calls SetMenu which itself dispatches
+		// to the main thread via Wails's InvokeSync — calling SetMenu
+		// from main during an InvokeSync would deadlock.
+		go func() {
+			t.rebuildMenu()
+			t.tray.OpenMenu()
+		}()
+	})
 }
 
 // setIconState swaps the tray ICON (not a text label) based on connection
@@ -324,11 +346,13 @@ func (t *trayManager) rebuildMenu() {
 	if t.quitting.Load() {
 		return
 	}
-	// Prevent concurrent rebuilds from overlapping AfterFunc timers.
-	if !t.rebuilding.CompareAndSwap(false, true) {
+	t.rebuildMu.Lock()
+	defer t.rebuildMu.Unlock()
+	// Re-check quitting after acquiring the lock — Quit may have run
+	// while a queued rebuild was waiting.
+	if t.quitting.Load() {
 		return
 	}
-	defer t.rebuilding.Store(false)
 
 	tunnels, err := t.svc.ListTunnelsLocal()
 	if err != nil {

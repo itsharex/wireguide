@@ -4,6 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"image"
+	_ "image/jpeg" // QR codes may arrive as JPEG (phone-camera capture, exports)
+	_ "image/png"  // ...or PNG (most common — qrencode + WG mobile apps default)
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +14,9 @@ import (
 	"time"
 
 	"github.com/korjwl1/wireguide/internal/config"
+	"github.com/makiuchi-d/gozxing"
+	"github.com/makiuchi-d/gozxing/qrcode"
+	_ "golang.org/x/image/webp" // ...or WebP (Safari/Chrome image caches, modern web exports)
 )
 
 // ZipImportResult holds the outcome of importing one .conf entry from a zip.
@@ -107,6 +113,67 @@ func (s *TunnelService) ImportConfig(name, content string) (*TunnelInfo, error) 
 // WireGuard configs are typically a few KB; anything larger is almost
 // certainly not a valid .conf file.
 const maxReadFileSize = 10 << 20
+
+// maxQRImageSize bounds the image we'll try to decode. QR images shared by
+// VPN providers are typically under 200 KB; the cap protects against an
+// accidentally-supplied multi-MB photo or a hostile oversize image.
+const maxQRImageSize = 8 << 20
+
+// decodeQRConfig decodes a QR code from raw image bytes and returns its
+// payload. Returns a stable error message ("no WireGuard QR code...") on any
+// decode failure so the frontend can show a single, consistent message
+// regardless of whether the issue was an unsupported image format, a missing
+// QR code, or a QR code without a [Interface] section.
+func decodeQRConfig(data []byte) (string, error) {
+	if len(data) > maxQRImageSize {
+		return "", fmt.Errorf("image too large (%d bytes, max %d)", len(data), maxQRImageSize)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("cannot decode image: %w", err)
+	}
+	bmp, err := gozxing.NewBinaryBitmapFromImage(img)
+	if err != nil {
+		return "", fmt.Errorf("no WireGuard QR code found in image")
+	}
+	res, err := qrcode.NewQRCodeReader().Decode(bmp, nil)
+	if err != nil {
+		return "", fmt.Errorf("no WireGuard QR code found in image")
+	}
+	text := res.GetText()
+	if !strings.Contains(text, "[Interface]") {
+		return "", fmt.Errorf("QR code does not contain a WireGuard config")
+	}
+	return text, nil
+}
+
+// ImportQRFromPath reads an image from disk, decodes its QR code, and imports
+// the contained WireGuard config under the given name.
+func (s *TunnelService) ImportQRFromPath(path, name string) (*TunnelInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	if info.Size() > maxQRImageSize {
+		return nil, fmt.Errorf("file too large (%d bytes, max %d)", info.Size(), maxQRImageSize)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	return s.ImportQRFromBytes(data, name)
+}
+
+// ImportQRFromBytes decodes a QR code from raw image bytes (typically supplied
+// by the file picker, which gives us bytes rather than a path) and imports the
+// resulting WireGuard config.
+func (s *TunnelService) ImportQRFromBytes(data []byte, name string) (*TunnelInfo, error) {
+	text, err := decodeQRConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	return s.ImportConfig(name, text)
+}
 
 // ReadFile reads a file from disk (used by native file drop). Returns the
 // content as a string so the frontend can handle name conflicts before import.

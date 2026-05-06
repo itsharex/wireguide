@@ -9,18 +9,38 @@
   },
   "nav": {
     "tunnels": "トンネル",
+    "history": "履歴",
     "tools": "ツール",
     "logs": "ログ",
     "settings": "設定"
+  },
+  "history": {
+    "title": "接続履歴",
+    "no_history": "まだ接続記録がありません。",
+    "clear": "クリア",
+    "refresh": "再読み込み",
+    "today": "今日",
+    "yesterday": "昨日",
+    "active": "接続中",
+    "started": "開始",
+    "ended": "終了",
+    "confirm_clear_title": "接続履歴を消去しますか?",
+    "confirm_clear_message": "この端末に保存されているすべてのセッション記録が完全に削除されます。",
+    "reason_user": "切断",
+    "reason_reconnect": "再接続",
+    "reason_app_quit": "アプリ終了",
+    "reason_health_check": "自動復旧",
+    "reason_error": "エラー"
   },
   "tunnel": {
     "list_title": "トンネル",
     "search": "検索…",
     "no_tunnels": "設定済みのトンネルがありません",
     "no_selection": "トンネルを選択するか、新しく作成してください",
-    "drop_hint": ".conf または .zip ファイルをここにドロップするか、インポートをクリック",
-    "drop_overlay": ".conf または .zip をドロップしてインポート",
+    "drop_hint": ".conf、.zip または QR 画像 (PNG/JPG) をドロップするか、インポートをクリック",
+    "drop_overlay": ".conf、.zip または QR 画像をドロップしてインポート",
     "import": "インポート",
+    "import_hint": ".conf、.zip または QR 画像 (PNG/JPG/WebP) に対応",
     "new_tunnel": "新しいトンネル",
     "connect": "接続",
     "disconnect": "切断",
@@ -52,7 +72,9 @@
     "kill_switch": "キルスイッチ",
     "dns_protection": "DNS 保護",
     "details": "詳細",
-    "rename_hint": "ダブルクリックで名前変更"
+    "rename_hint": "ダブルクリックで名前変更",
+    "notes": "メモ",
+    "notes_placeholder": "エンドポイントの場所、認証情報のヒントなど自由メモ"
   },
   "import": {
     "title": "トンネルのインポート",
