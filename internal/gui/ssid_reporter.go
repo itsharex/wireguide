@@ -3,6 +3,7 @@ package gui
 import (
 	"log/slog"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/korjwl1/wireguide/internal/ipc"
@@ -14,24 +15,37 @@ import (
 // because the helper (root LaunchDaemon) cannot read SSID via CoreWLAN —
 // Location Services permission is scoped to the GUI .app bundle.
 // On non-darwin platforms this is a no-op since the helper can read SSID directly.
-func startSSIDReporter(clients *ipc.ClientHolder) {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	last := wifi.CurrentSSID()
-	// Send the initial SSID immediately so the helper starts with the right state.
-	reportSSID(clients, last)
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		current := wifi.CurrentSSID()
-		if current == last {
-			continue
+//
+// done: closed when the GUI is shutting down. The reporter exits its loop on
+// the next tick (or immediately if blocking on the ticker).
+// wg: caller has already Add(1)-d before invoking; the reporter calls Done()
+// on exit so the GUI shutdown path can Wait() for clean termination.
+func startSSIDReporter(clients *ipc.ClientHolder, done <-chan struct{}, wg *sync.WaitGroup) {
+	go func() {
+		defer wg.Done()
+		if runtime.GOOS != "darwin" {
+			return
 		}
-		last = current
-		reportSSID(clients, current)
-	}
+		last := wifi.CurrentSSID()
+		// Send the initial SSID immediately so the helper starts with the right state.
+		reportSSID(clients, last)
+
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
+			current := wifi.CurrentSSID()
+			if current == last {
+				continue
+			}
+			last = current
+			reportSSID(clients, current)
+		}
+	}()
 }
 
 func reportSSID(clients *ipc.ClientHolder, ssid string) {

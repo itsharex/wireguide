@@ -26,6 +26,12 @@ type Server struct {
 	onConnect    func() // called when a control conn attaches (any)
 	onDisconnect func() // called when the last control conn closes
 	controlConns map[net.Conn]struct{}
+
+	// connWg tracks in-flight safeHandleConn goroutines. Shutdown waits on it
+	// (with a timeout) so callers can be sure no RPC handler is still
+	// touching Helper state by the time Shutdown returns. Without this,
+	// helper cleanup could race a handler mid-call.
+	connWg sync.WaitGroup
 }
 
 type subscriber struct {
@@ -98,6 +104,7 @@ func (s *Server) Serve() error {
 			continue
 		}
 		consecutiveErrors = 0
+		s.connWg.Add(1)
 		go s.safeHandleConn(conn)
 	}
 }
@@ -106,6 +113,7 @@ func (s *Server) Serve() error {
 // RPC handler does not kill the entire helper process. Without this, a nil
 // dereference or unexpected state in a handler would crash the helper silently.
 func (s *Server) safeHandleConn(conn net.Conn) {
+	defer s.connWg.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			// Use %p (pointer address) instead of RemoteAddr().String() to
@@ -120,7 +128,12 @@ func (s *Server) safeHandleConn(conn net.Conn) {
 	s.handleConn(conn)
 }
 
-// Shutdown stops the server.
+// Shutdown stops the server. Blocks until all in-flight RPC handler
+// goroutines have returned (bounded by a 3s safety timeout) so callers can
+// proceed with state teardown without racing a handler that's still reading
+// Helper fields. The bound prevents a stuck handler from holding the whole
+// helper exit hostage — at that point we log and return anyway, letting
+// the process exit and launchd respawn handle the wedged state.
 func (s *Server) Shutdown() {
 	select {
 	case <-s.shutdownCh:
@@ -137,6 +150,19 @@ func (s *Server) Shutdown() {
 		c.Close()
 	}
 	s.mu.Unlock()
+
+	// Wait for in-flight handlers with a hard ceiling so a wedged handler
+	// can't deadlock helper shutdown indefinitely.
+	done := make(chan struct{})
+	go func() {
+		s.connWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		slog.Warn("ipc: Shutdown timed out waiting for in-flight handlers")
+	}
 }
 
 // Broadcast sends an event notification to all subscribers.

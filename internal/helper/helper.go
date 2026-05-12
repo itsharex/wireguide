@@ -8,6 +8,7 @@
 package helper
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -290,7 +291,14 @@ func Run(addr string, ownerUID int, dataDir string) error {
 // (legacy sleep/wake path), it reconnects all cached tunnels.
 // The connectMu is held during Connect to prevent races with concurrent
 // GUI connect/disconnect calls.
-func (h *Helper) reconnectFn(name string) error {
+//
+// The ctx is checked at every boundary where we can still short-circuit
+// (before grabbing connectMu, between per-tunnel Connects in the legacy
+// path). Manager.Connect itself is not ctx-aware today — once we enter it
+// the helper is committed to that attempt up to Connect's internal
+// timeouts. This still lets monitor.Stop() exit quickly in the common
+// case where cancellation lands before Connect starts.
+func (h *Helper) reconnectFn(ctx context.Context, name string) error {
 	h.mu.Lock()
 	cfgs := h.copyActiveCfgs()
 	h.mu.Unlock()
@@ -299,6 +307,9 @@ func (h *Helper) reconnectFn(name string) error {
 		cfg, ok := cfgs[name]
 		if !ok {
 			return fmt.Errorf("no cached config for tunnel %q", name)
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("reconnect %q cancelled before Connect: %w", name, err)
 		}
 		h.connectMu.Lock()
 		err := h.manager.Connect(cfg)
@@ -312,6 +323,9 @@ func (h *Helper) reconnectFn(name string) error {
 	}
 	var lastErr error
 	for _, cfg := range cfgs {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("reconnect-all cancelled mid-loop: %w", err)
+		}
 		h.connectMu.Lock()
 		err := h.manager.Connect(cfg)
 		h.connectMu.Unlock()

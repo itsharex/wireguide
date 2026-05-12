@@ -138,7 +138,8 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	// CoreWLAN because Location Services permission is bundle-scoped. Poll
 	// here in the GUI process (which holds permission) and forward changes
 	// to the helper via MethodReportSSID so auto-connect rules fire correctly.
-	go startSSIDReporter(clients)
+	// The reporter is wired into the same shutdown lifecycle as the helper
+	// health monitor (declared further down) — both stop cleanly on app quit.
 
 	// Register the log event shape so Wails knows how to marshal it.
 	application.RegisterEvent[ipc.LogEntry]("log")
@@ -219,8 +220,20 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 			tunnelService.CloseHistorySessions("app_quit")
 			c := clients.Get()
 			if c != nil {
-				_ = c.Call(ipc.MethodDisconnect, nil, nil)
-				_ = c.Call(ipc.MethodShutdown, nil, nil)
+				// Bounded timeouts so a hung helper can't keep the GUI
+				// alive forever — user clicked Quit, they expect the app
+				// to die. 2s is generous for a local Unix-socket RPC that
+				// just kicks off async teardown.
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := c.CallWithContext(ctx, ipc.MethodDisconnect, nil, nil); err != nil {
+					slog.Warn("shutdown: Disconnect RPC failed", "error", err)
+				}
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+				if err := c.CallWithContext(ctx, ipc.MethodShutdown, nil, nil); err != nil {
+					slog.Warn("shutdown: Shutdown RPC failed", "error", err)
+				}
+				cancel()
 			}
 			// Close in a goroutine with a short delay so the helper has
 			// time to process the shutdown command without blocking the
@@ -265,6 +278,11 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	var healthWg sync.WaitGroup
 	healthWg.Add(1)
 	startHelperHealthMonitor(app, clients, dataDir, bridge, healthDone, &healthWg)
+	// SSID reporter shares the same shutdown channel + WaitGroup so app
+	// quit waits for it to exit before returning, instead of leaking the
+	// goroutine until process death.
+	healthWg.Add(1)
+	startSSIDReporter(clients, healthDone, &healthWg)
 
 	// 9. Run (blocks)
 	err = app.Run()

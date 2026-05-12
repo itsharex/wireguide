@@ -52,8 +52,13 @@ type State struct {
 }
 
 // ReconnectFunc is called to perform the actual reconnection of a specific
-// tunnel identified by name.
-type ReconnectFunc func(name string) error
+// tunnel identified by name. The ctx is the same ctx the monitor created for
+// this retry slot — implementations must honour ctx.Err() before any
+// long-running operation so that Stop() / CancelRetry() can short-circuit
+// reconnect attempts that haven't actually started yet. (Operations already
+// in flight inside tunnel.Manager are not ctx-aware today; they bound their
+// own timeouts.)
+type ReconnectFunc func(ctx context.Context, name string) error
 
 // StatusChangedFunc is called when reconnection state changes.
 type StatusChangedFunc func(state State)
@@ -496,7 +501,7 @@ func (m *Monitor) reconnectWithBackoff(ctx context.Context, tunnelName string, e
 
 		// Attempt reconnection — pass tunnel name so only the specific
 		// tunnel is reconnected when doing per-tunnel health recovery.
-		if err := m.reconnectFn(tunnelName); err != nil {
+		if err := m.reconnectFn(ctx, tunnelName); err != nil {
 			slog.Warn("reconnection failed", "attempt", attempt, "tunnel", tunnelName, "error", err)
 			// Re-enable firewall after failed attempt so the system stays
 			// protected between retries.

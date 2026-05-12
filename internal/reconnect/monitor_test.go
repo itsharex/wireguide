@@ -1,6 +1,7 @@
 package reconnect
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -150,7 +151,7 @@ func waitFor(t *testing.T, timeout time.Duration, msg string, cond func() bool) 
 
 func TestSleepWake_TriggersReconnect_WhenConnected(t *testing.T) {
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -171,7 +172,7 @@ func TestSleepWake_TriggersReconnect_WhenConnected(t *testing.T) {
 
 func TestSleepWake_DoesNotReconnect_WhenDisconnected(t *testing.T) {
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -200,7 +201,7 @@ func TestHealthCheck_StaleHandshake_TriggersReconnect(t *testing.T) {
 	// This isolates the reconnect logic from the ticker timing.
 
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -232,7 +233,7 @@ func TestHealthCheck_RecentHandshake_DoesNotReconnect(t *testing.T) {
 	// the decision logic directly.
 
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -271,7 +272,7 @@ func TestExponentialBackoff(t *testing.T) {
 	targetAttempts := 4
 	done := make(chan struct{})
 
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		mu.Lock()
 		attempts = append(attempts, time.Now())
 		n := len(attempts)
@@ -325,7 +326,7 @@ func TestExponentialBackoff(t *testing.T) {
 
 func TestCancelRetry_StopsInProgressReconnect(t *testing.T) {
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return errors.New("fail")
 	}
@@ -388,7 +389,7 @@ func TestFirewallCallbacks_CalledInOrder(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		record("reconnect")
 		return nil // succeed on first attempt
 	}
@@ -442,7 +443,7 @@ func TestFirewallCallbacks_ResumedOnFailure(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxAttempts = 1 // Only one attempt so it stops quickly.
 
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return errors.New("fail")
 	}
@@ -479,7 +480,7 @@ func TestMaxAttempts_LimitsRetries(t *testing.T) {
 	cfg.MaxAttempts = 3
 
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return errors.New("always fail")
 	}
@@ -525,7 +526,7 @@ func TestMaxAttempts_ZeroMeansUnlimited(t *testing.T) {
 	cfg.MaxAttempts = 0 // unlimited
 
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return errors.New("always fail")
 	}
@@ -553,7 +554,7 @@ func TestMaxAttempts_ZeroMeansUnlimited(t *testing.T) {
 }
 
 func TestConcurrent_StartStop(t *testing.T) {
-	reconnectFn := func(name string) error { return nil }
+	reconnectFn := func(_ context.Context, name string) error { return nil }
 	mon, _, _ := newTestMonitor(testConfig(), reconnectFn)
 
 	var wg sync.WaitGroup
@@ -583,7 +584,7 @@ func TestConcurrent_StartStop(t *testing.T) {
 
 func TestStop_CancelsActiveReconnect(t *testing.T) {
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return errors.New("fail")
 	}
@@ -625,7 +626,7 @@ func TestGetState_ReflectsAttempt(t *testing.T) {
 	cfg.MaxAttempts = 5
 
 	attemptSeen := make(chan struct{})
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		// Signal after the first attempt so the test can read state.
 		select {
 		case <-attemptSeen:
@@ -663,7 +664,7 @@ func TestSleepWake_ActiveTunnel_NoIsConnected(t *testing.T) {
 	// returns false. This covers the case where the tunnel is in a connecting
 	// or disconnecting transient state.
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -694,7 +695,7 @@ func TestStatusCallback_CalledDuringReconnect(t *testing.T) {
 		mu.Unlock()
 	}
 
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		return errors.New("fail")
 	}
 
@@ -737,7 +738,7 @@ func TestStatusCallback_CalledDuringReconnect(t *testing.T) {
 }
 
 func TestDoubleStart_IsIdempotent(t *testing.T) {
-	reconnectFn := func(name string) error { return nil }
+	reconnectFn := func(_ context.Context, name string) error { return nil }
 	mon, _, _ := newTestMonitor(testConfig(), reconnectFn)
 
 	mon.Start()
@@ -749,7 +750,7 @@ func TestDoubleStart_IsIdempotent(t *testing.T) {
 func TestMonitorLoop_SkipsWhenNotConnected(t *testing.T) {
 	// Verifies that monitorLoop does nothing when tunnel is disconnected.
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -771,7 +772,7 @@ func TestMonitorLoop_SkipsZeroHandshake(t *testing.T) {
 	// When Status() returns non-nil but LastHandshakeTime is zero (tunnel
 	// still initializing), monitorLoop should NOT trigger a reconnect.
 	var reconnectCalls atomic.Int32
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		reconnectCalls.Add(1)
 		return nil
 	}
@@ -802,7 +803,7 @@ func TestBackoffCapsAtMaxDelay(t *testing.T) {
 	targetAttempts := 6
 	done := make(chan struct{})
 
-	reconnectFn := func(name string) error {
+	reconnectFn := func(_ context.Context, name string) error {
 		mu.Lock()
 		attempts = append(attempts, time.Now())
 		n := len(attempts)
