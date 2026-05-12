@@ -336,9 +336,13 @@ func (h *Helper) handleSetHealthCheck(params json.RawMessage) (interface{}, erro
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if h.monitor != nil {
-		h.monitor.SetHealthCheck(req.Enabled)
+	if h.monitor == nil {
+		// Should be impossible — monitor is created unconditionally in Run().
+		// If it's nil, helper init was broken; surface that instead of
+		// pretending the setting was applied.
+		return nil, fmt.Errorf("reconnect monitor not initialised")
 	}
+	h.monitor.SetHealthCheck(req.Enabled)
 	return ipc.Empty{}, nil
 }
 
@@ -347,7 +351,9 @@ func (h *Helper) handleSetPinInterface(params json.RawMessage) (interface{}, err
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	h.manager.SetPinInterface(req.Enabled)
+	if err := h.manager.SetPinInterface(req.Enabled); err != nil {
+		return nil, err
+	}
 	return ipc.Empty{}, nil
 }
 
@@ -360,8 +366,12 @@ func (h *Helper) handleReportSSID(params json.RawMessage) (interface{}, error) {
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if h.wifiMon != nil {
-		h.wifiMon.ReportExternalSSID(req.SSID)
+	if h.wifiMon == nil {
+		// Should be impossible — wifiMon is created unconditionally in Run().
+		// Surfacing the error lets the GUI know Wi-Fi rules won't fire,
+		// instead of silently swallowing every SSID update.
+		return nil, fmt.Errorf("wifi monitor not initialised")
 	}
+	h.wifiMon.ReportExternalSSID(req.SSID)
 	return ipc.Empty{}, nil
 }
