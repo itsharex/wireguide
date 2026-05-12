@@ -243,6 +243,13 @@ func (f *LinuxFirewall) IsDNSProtectionEnabled() bool {
 	return f.dnsProtectionEnabled
 }
 
+// RecoverFromCrash is a no-op on Linux — nftables rules don't survive a
+// process crash to begin with, since they live in the kernel under our table
+// name and we recreate them on every EnableKillSwitch.
+func (f *LinuxFirewall) RecoverFromCrash() bool {
+	return false
+}
+
 func (f *LinuxFirewall) Cleanup() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

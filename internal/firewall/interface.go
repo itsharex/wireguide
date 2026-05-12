@@ -30,4 +30,11 @@ type FirewallManager interface {
 
 	// Cleanup removes all firewall rules (called on shutdown/crash recovery).
 	Cleanup() error
+
+	// RecoverFromCrash restores firewall state persisted by a previous helper
+	// instance that crashed. Returns true when recovery actually ran (e.g. a
+	// pf state file was found on macOS). Safe to call when no prior crash
+	// state exists. Called once during helper startup, before any tunnel
+	// brings new rules up.
+	RecoverFromCrash() bool
 }

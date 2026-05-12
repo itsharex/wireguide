@@ -181,6 +181,16 @@ func Run(addr string, ownerUID int, dataDir string) error {
 		slog.Warn("recovered from previous crash", "tunnels", recovered)
 	}
 
+	// Firewall crash recovery — restores OS-level firewall state (e.g. macOS
+	// pf enabled/disabled) that the previous helper persisted to disk before
+	// dying. Must run BEFORE any tunnel rebrings rules up, otherwise the new
+	// rules would mask whatever stale state the crashed helper left behind.
+	// No-op on Linux/Windows (their firewall implementations don't persist
+	// state across crashes).
+	if recovered := fw.RecoverFromCrash(); recovered {
+		slog.Warn("recovered firewall state from previous crash")
+	}
+
 	// Reconnect monitor — uses cached config
 	h.monitor = reconnect.NewMonitor(manager, h.reconnectFn, h.onReconnectState, reconnect.DefaultConfig())
 	h.monitor.SetFirewallCallbacks(h.suspendFirewall, h.resumeFirewall)

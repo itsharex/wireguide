@@ -233,6 +233,13 @@ func (f *WindowsFirewall) IsDNSProtectionEnabled() bool {
 	return f.dnsProtectionEnabled
 }
 
+// RecoverFromCrash is a no-op on Windows — Windows Firewall rules are
+// idempotent under our naming convention; Cleanup() handles stale rules
+// from a prior crashed helper on next startup.
+func (f *WindowsFirewall) RecoverFromCrash() bool {
+	return false
+}
+
 // Cleanup removes ALL WireGuide-named firewall rules and restores the original
 // default firewall policy. Safe to call from crash recovery — rule names are
 // deleted by pattern (not in-memory counts), and the original policy is read

@@ -308,24 +308,20 @@ func (f *DarwinFirewall) IsDNSProtectionEnabled() bool {
 }
 
 func (f *DarwinFirewall) Cleanup() error {
+	// Snapshot what was active under the lock, but do NOT zero the cached
+	// DNS interface/servers yet — if flushAllAnchors fails, a follow-up
+	// resumeFirewall would need that info to re-apply DNS protection.
+	// Clearing happens at the end only when the pf flush actually succeeded.
 	f.mu.Lock()
 	dnsActive := f.dnsProtectionEnabled
 	ksActive := f.killSwitchEnabled
 	pfWas := f.pfWasEnabled
-	f.dnsProtectionEnabled = false
-	f.killSwitchEnabled = false
-	// Zero the cached DNS state too. Without this, a future
-	// EnableKillSwitch (e.g. via resumeFirewall after a partial
-	// shutdown) would re-load the DNS sub-anchor with stale
-	// interface/server values from the now-defunct session.
-	f.savedDNSInterface = ""
-	f.savedDNSServers = nil
-	f.pfWasEnabled = false
 	f.mu.Unlock()
 
 	// Flush all anchor rules regardless of what was active.
-	if err := flushAllAnchors(); err != nil {
-		slog.Warn("cleanup: flush pf anchors failed", "error", err)
+	flushErr := flushAllAnchors()
+	if flushErr != nil {
+		slog.Warn("cleanup: flush pf anchors failed", "error", flushErr)
 	}
 
 	// Restore pf enabled/disabled state if we had anything active.
@@ -335,10 +331,26 @@ func (f *DarwinFirewall) Cleanup() error {
 				slog.Warn("cleanup: pfctl -d failed", "error", err)
 			}
 		}
-
 		removePfStateFile()
 	}
 
+	// Clear in-memory state only after the flush. If flush failed, leave
+	// savedDNS* intact so the next operation can still see what we tried
+	// to manage — and surface the flush error so callers know cleanup was
+	// only partial.
+	f.mu.Lock()
+	if flushErr == nil {
+		f.savedDNSInterface = ""
+		f.savedDNSServers = nil
+	}
+	f.dnsProtectionEnabled = false
+	f.killSwitchEnabled = false
+	f.pfWasEnabled = false
+	f.mu.Unlock()
+
+	if flushErr != nil {
+		return fmt.Errorf("firewall cleanup: %w", flushErr)
+	}
 	return nil
 }
 
@@ -425,6 +437,13 @@ func removePfStateFile() {
 	if err := os.Remove(savedPfStateFile); err != nil && !os.IsNotExist(err) {
 		slog.Warn("failed to remove pf state file", "path", savedPfStateFile, "error", err)
 	}
+}
+
+// RecoverFromCrash satisfies the FirewallManager interface. Delegates to the
+// package-level RecoverSavedRules so the helper init path can call it without
+// importing darwin-specific symbols.
+func (f *DarwinFirewall) RecoverFromCrash() bool {
+	return RecoverSavedRules()
 }
 
 // RecoverSavedRules checks for a persisted pf state file left behind by a

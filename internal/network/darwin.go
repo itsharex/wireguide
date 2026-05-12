@@ -1016,10 +1016,19 @@ func (m *DarwinManager) ResetDNSToSystemDefault() error {
 // RestoreDNS restores original DNS for every service we touched. Parallel
 // across services — each networksetup call is ~200 ms, and with 5+ services
 // the serial version added a full second to every Disconnect.
+//
+// Returns a non-nil error listing the services whose networksetup call failed,
+// so the caller (and ultimately the user) knows DNS may still point at the
+// tunnel's resolver instead of the original. The in-memory dnsActive flag is
+// still cleared on partial failure: the saved entries no longer reflect a
+// consistent system snapshot once we've started mutating, and re-running
+// RestoreDNS with the same stale map would just repeat the same failed call.
 func (m *DarwinManager) RestoreDNS(ifaceName string) error {
-	// Snapshot saved state under the lock, then reset it in the same
-	// critical section so any racing SetDNS doesn't see a half-cleared
-	// view. dnsActive/savedDNS/savedSearch all live under m.mu.
+	// Snapshot saved state under the lock. We deliberately keep dnsActive=true
+	// during the restore: a concurrent SetDNS racing in here would otherwise
+	// re-snapshot the *partially-restored* system DNS as if it were the
+	// pristine original, permanently losing the real baseline. We clear the
+	// flag at the end after networksetup finishes (success or fail).
 	m.mu.Lock()
 	if !m.dnsActive {
 		m.mu.Unlock()
@@ -1027,25 +1036,29 @@ func (m *DarwinManager) RestoreDNS(ifaceName string) error {
 	}
 	savedDNS := m.savedDNS
 	savedSearch := m.savedSearch
-	m.savedDNS = make(map[string][]string)
-	m.savedSearch = make(map[string][]string)
-	m.dnsActive = false
-	m.lastDNS = nil
 	m.mu.Unlock()
 
 	// Fan out networksetup calls in parallel — each is ~200ms, so for 5+
-	// services we save multiple seconds vs serial.
+	// services we save multiple seconds vs serial. errCh is buffered to the
+	// total work count so each goroutine sends without blocking even when no
+	// reader is yet draining.
+	totalOps := len(savedDNS) + len(savedSearch)
+	errCh := make(chan error, totalOps)
 	var wg sync.WaitGroup
 	for svc, orig := range savedDNS {
 		svc, orig := svc, orig
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var err error
 			if len(orig) == 0 {
-				_ = run("networksetup", "-setdnsservers", svc, "Empty")
+				err = run("networksetup", "-setdnsservers", svc, "Empty")
 			} else {
 				args := append([]string{"-setdnsservers", svc}, orig...)
-				_ = run("networksetup", args...)
+				err = run("networksetup", args...)
+			}
+			if err != nil {
+				errCh <- fmt.Errorf("setdnsservers %s: %w", svc, err)
 			}
 		}()
 	}
@@ -1054,16 +1067,41 @@ func (m *DarwinManager) RestoreDNS(ifaceName string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var err error
 			if len(search) == 0 {
-				_ = run("networksetup", "-setsearchdomains", svc, "Empty")
+				err = run("networksetup", "-setsearchdomains", svc, "Empty")
 			} else {
 				args := append([]string{"-setsearchdomains", svc}, search...)
-				_ = run("networksetup", args...)
+				err = run("networksetup", args...)
+			}
+			if err != nil {
+				errCh <- fmt.Errorf("setsearchdomains %s: %w", svc, err)
 			}
 		}()
 	}
 	wg.Wait()
+	close(errCh)
+
+	// Clear state regardless of success — the saved maps no longer match
+	// any consistent system state after partial mutation, and keeping the
+	// flag would block future SetDNS from re-capturing a fresh baseline.
+	m.mu.Lock()
+	m.savedDNS = make(map[string][]string)
+	m.savedSearch = make(map[string][]string)
+	m.dnsActive = false
+	m.lastDNS = nil
+	m.mu.Unlock()
+
 	flushDNSCache()
+
+	var failures []string
+	for e := range errCh {
+		failures = append(failures, e.Error())
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("RestoreDNS: %d service(s) failed: %s",
+			len(failures), strings.Join(failures, "; "))
+	}
 	return nil
 }
 
