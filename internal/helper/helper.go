@@ -177,8 +177,11 @@ func Run(addr string, ownerUID int, dataDir string) error {
 		return h.server.Broadcast
 	})))
 
-	// Crash recovery (now logs via broadcast handler)
-	if recovered := tunnel.RecoverFromCrash(dataDir); len(recovered) > 0 {
+	// Crash recovery (now logs via broadcast handler). Pass the helper's
+	// own firewall instance so cleanup reuses its in-memory state
+	// instead of constructing a fresh one inside the tunnel package
+	// (which previously decoupled the cleanup from the helper's view).
+	if recovered := tunnel.RecoverFromCrash(dataDir, fw); len(recovered) > 0 {
 		slog.Warn("recovered from previous crash", "tunnels", recovered)
 	}
 

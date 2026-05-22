@@ -123,9 +123,20 @@ func TestLoadActiveState_LegacyMigration(t *testing.T) {
 	}
 }
 
+// fakeFirewall implements FirewallCleaner for tests.
+type fakeFirewall struct {
+	cleanupCalled int
+}
+
+func (f *fakeFirewall) Cleanup() error {
+	f.cleanupCalled++
+	return nil
+}
+
 func TestRecoverFromCrashNoState(t *testing.T) {
 	dir := t.TempDir()
-	names := RecoverFromCrash(dir)
+	fw := &fakeFirewall{}
+	names := RecoverFromCrash(dir, fw)
 	if len(names) != 0 {
 		t.Errorf("expected empty, got %v", names)
 	}
@@ -138,9 +149,13 @@ func TestRecoverFromCrashWithState(t *testing.T) {
 		InterfaceName: "utun99",
 	})
 
-	names := RecoverFromCrash(dir)
+	fw := &fakeFirewall{}
+	names := RecoverFromCrash(dir, fw)
 	if len(names) != 1 || names[0] != "crashed-vpn" {
 		t.Errorf("expected ['crashed-vpn'], got %v", names)
+	}
+	if fw.cleanupCalled != 1 {
+		t.Errorf("expected firewall Cleanup called once, got %d", fw.cleanupCalled)
 	}
 
 	// State should be cleared after recovery
@@ -154,13 +169,24 @@ func TestRecoverFromCrashMultiple(t *testing.T) {
 	SaveActiveState(dir, &ActiveTunnelState{TunnelName: "vpn1", InterfaceName: "utun1"})
 	SaveActiveState(dir, &ActiveTunnelState{TunnelName: "vpn2", InterfaceName: "utun2"})
 
-	names := RecoverFromCrash(dir)
+	fw := &fakeFirewall{}
+	names := RecoverFromCrash(dir, fw)
 	if len(names) != 2 {
 		t.Fatalf("expected 2 recovered tunnels, got %d: %v", len(names), names)
 	}
 
 	if len(LoadActiveState(dir)) != 0 {
 		t.Error("all state should be cleared after recovery")
+	}
+}
+
+func TestRecoverFromCrashNilFirewall(t *testing.T) {
+	dir := t.TempDir()
+	SaveActiveState(dir, &ActiveTunnelState{TunnelName: "vpn1", InterfaceName: "utun1"})
+	// nil fw is a valid input (no firewall cleanup) — must not panic.
+	names := RecoverFromCrash(dir, nil)
+	if len(names) != 1 {
+		t.Errorf("expected 1 recovered tunnel, got %d", len(names))
 	}
 }
 

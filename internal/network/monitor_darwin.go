@@ -48,6 +48,72 @@ func newRouteMonitor(reapply func()) *routeMonitor {
 	return &routeMonitor{reapply: reapply}
 }
 
+// routeMonitorMgr multiplexes a single `route -n monitor` subprocess to
+// many per-tunnel callbacks. With N connected tunnels each owning its
+// own DarwinManager, the previous design spun up N redundant
+// subprocesses receiving identical RTM_* events. This manager keeps
+// exactly one subprocess for the lifetime of the FIRST → LAST tunnel.
+//
+// Subscribe / Unsubscribe are keyed by interface name (e.g., "utun7").
+// The first Subscribe spawns the underlying routeMonitor (delayed 2s
+// to skip our own route-add chatter). The last Unsubscribe stops it.
+type routeMonitorMgr struct {
+	mu   sync.Mutex
+	subs map[string]func()
+	m    *routeMonitor
+}
+
+// rmMgr is the package-level singleton. Process-wide.
+var rmMgr = &routeMonitorMgr{subs: make(map[string]func())}
+
+// Subscribe registers a reapply callback under `key`. Spawns the
+// underlying monitor on the first subscriber. Safe to call multiple
+// times for the same key (later call wins).
+func (mgr *routeMonitorMgr) Subscribe(key string, cb func()) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	mgr.subs[key] = cb
+	if mgr.m == nil {
+		mgr.m = newRouteMonitor(mgr.fanOut)
+		mgr.m.StartDelayed(2 * time.Second)
+	}
+}
+
+// Unsubscribe removes the callback for `key`. Stops the underlying
+// monitor when the last subscriber leaves. Stop() is invoked OUTSIDE
+// the lock so its pending.Wait() doesn't deadlock against a fanOut
+// that's currently trying to acquire mgr.mu.
+func (mgr *routeMonitorMgr) Unsubscribe(key string) {
+	mgr.mu.Lock()
+	delete(mgr.subs, key)
+	var toStop *routeMonitor
+	if len(mgr.subs) == 0 {
+		toStop = mgr.m
+		mgr.m = nil
+	}
+	mgr.mu.Unlock()
+	if toStop != nil {
+		toStop.Stop()
+	}
+}
+
+// fanOut is the single reapply callback registered with the underlying
+// monitor. It snapshots subscribers under the lock, then dispatches
+// each callback OUTSIDE the lock so a slow callback can't block
+// further fanOut iterations from being scheduled by the monitor's
+// debouncer.
+func (mgr *routeMonitorMgr) fanOut() {
+	mgr.mu.Lock()
+	snapshot := make([]func(), 0, len(mgr.subs))
+	for _, cb := range mgr.subs {
+		snapshot = append(snapshot, cb)
+	}
+	mgr.mu.Unlock()
+	for _, cb := range snapshot {
+		cb()
+	}
+}
+
 // StartDelayed schedules Start() to run after `d`. If Stop() is called before
 // the timer fires, the scheduled Start is cancelled — this prevents a leaked
 // `route -n monitor` subprocess + goroutine when the caller tears down the

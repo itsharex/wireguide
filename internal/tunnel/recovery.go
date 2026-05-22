@@ -7,9 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/korjwl1/wireguide/internal/firewall"
 	"github.com/korjwl1/wireguide/internal/network"
 )
+
+// FirewallCleaner is the minimal slice of the firewall manager that
+// crash recovery needs — just enough to flush leftover OS-level rules.
+// Defined in the tunnel (domain) package so recovery doesn't need to
+// import the firewall (infra) package directly. The helper passes its
+// own live firewall instance in, preserving its in-memory state
+// (pfWasEnabled, savedDNSServers, etc.) across the cleanup.
+type FirewallCleaner interface {
+	Cleanup() error
+}
 
 // ActiveTunnelState is persisted to disk while a tunnel is active.
 // On startup, if this file exists, a previous crash is detected.
@@ -123,7 +132,13 @@ func LoadActiveState(dataDir string) []*ActiveTunnelState {
 // the dead interface. We run a best-effort cleanup via the platform network
 // manager to avoid leaving the user stuck on the tunnel's DNS servers or
 // with unreachable bypass routes.
-func RecoverFromCrash(dataDir string) []string {
+//
+// `fw` is the firewall instance owned by the caller (typically the
+// helper). Using the caller's instance — instead of constructing a fresh
+// one here — keeps the firewall's in-memory state (pfWasEnabled,
+// savedDNSInterface/Servers) consistent with what the post-recovery
+// helper code expects. A nil fw is treated as "no firewall cleanup".
+func RecoverFromCrash(dataDir string, fw FirewallCleaner) []string {
 	states := LoadActiveState(dataDir)
 	if len(states) == 0 {
 		return nil
@@ -196,10 +211,13 @@ func RecoverFromCrash(dataDir string) []string {
 	}
 
 	// Firewall: clean up any leftover PF/nftables/netsh rules from the
-	// crashed tunnel's kill switch or DNS protection.
-	fwMgr := firewall.NewPlatformFirewall()
-	if err := fwMgr.Cleanup(); err != nil {
-		slog.Warn("crash recovery: firewall cleanup failed", "error", err)
+	// crashed tunnel's kill switch or DNS protection. Uses the caller's
+	// firewall instance so in-memory state stays consistent with the
+	// post-recovery helper view.
+	if fw != nil {
+		if err := fw.Cleanup(); err != nil {
+			slog.Warn("crash recovery: firewall cleanup failed", "error", err)
+		}
 	}
 
 	// Clear ONLY the state files whose recovery fully succeeded.

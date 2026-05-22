@@ -1,28 +1,32 @@
 <script>
   import { afterUpdate, onMount } from 'svelte';
-  import { logs, clearLogs } from '../stores/logs.js';
+  import { logs, clearLogs, orderedLogs } from '../stores/logs.js';
   import { t } from '../i18n/index.js';
 
   let filter = 'all';
   let autoScroll = true;
   let logContainer;
-  let prevLogsLen = 0;
+  let prevVersion = -1;
   let shouldScroll = true;
   let copyFeedback = false;
 
   const levels = ['debug', 'info', 'warn', 'error'];
   const levelRank = { debug: 0, info: 1, warn: 2, error: 3 };
 
-  $: filtered = ($logs || []).filter((entry) => {
+  // Materialize the ring-buffer into a chronological array — only when
+  // LogViewer is mounted (here). Push path in logs.js is O(1) and
+  // allocation-free; the slice/concat happens only on this read.
+  $: ordered = orderedLogs($logs);
+  $: filtered = ordered.filter((entry) => {
     if (filter === 'all') return true;
     return (levelRank[entry.level] ?? 1) >= (levelRank[filter] ?? 1);
   });
 
   $: {
-    const len = ($logs || []).length;
-    if (len !== prevLogsLen) {
+    const v = $logs?.version ?? 0;
+    if (v !== prevVersion) {
       shouldScroll = true;
-      prevLogsLen = len;
+      prevVersion = v;
     }
   }
 

@@ -60,8 +60,11 @@ type DarwinManager struct {
 	// to the upstream interface. Disabled by default.
 	pinInterface bool
 
-	// Route monitor (wg-quick monitor_daemon equivalent) — only runs for full tunnel.
-	monitor *routeMonitor
+	// Route-monitor subscription key (the tunnel interface name). The
+	// underlying `route -n monitor` subprocess is process-wide; this
+	// DarwinManager just registers/unregisters its reapply callback
+	// against rmMgr. Empty string means not subscribed.
+	monitorKey string
 }
 
 // SetPinInterface enables or disables -ifscope bypass route pinning.
@@ -289,15 +292,14 @@ func (m *DarwinManager) AddRoutes(ifaceName string, allowedIPs []string, fullTun
 	// (if any) need the same gateway-change tracking.
 	needsMonitor := fullTunnel || len(m.lastDNS) > 0
 	if needsMonitor {
+		// Subscribe under the interface name. The process-wide rmMgr
+		// owns the single `route -n monitor` subprocess shared across
+		// all connected tunnels. First Subscribe spawns it (delayed
+		// 2 s), last Unsubscribe stops it.
 		m.mu.Lock()
-		if m.monitor == nil {
-			m.monitor = newRouteMonitor(m.reapply)
-		}
-		mon := m.monitor
+		m.monitorKey = ifaceName
 		m.mu.Unlock()
-		// Delayed start internally cancellable by Stop() — prevents a
-		// route -n monitor leak on fast Connect→Disconnect cycles.
-		mon.StartDelayed(2 * time.Second)
+		rmMgr.Subscribe(ifaceName, m.reapply)
 	}
 
 	return nil
@@ -612,14 +614,17 @@ func (m *DarwinManager) addBypassForIP(ipStr, gwV4, gwV6 string, gwV4Err, gwV6Er
 // routes pointing at this interface, then remove endpoint bypass routes.
 // This is more robust than tracking what we added.
 func (m *DarwinManager) RemoveRoutes(ifaceName string, allowedIPs []string, fullTunnel bool) error {
-	// Stop the route monitor first so its reapply goroutine can't race with
-	// teardown. Stop() blocks until any in-flight reapply callback finishes.
-	// Read under m.mu to avoid the data race with Connect()'s assignment.
+	// Unsubscribe from the process-wide route monitor first so a
+	// concurrent fanOut() can't deliver another reapply() against the
+	// tunnel we're about to tear down. Unsubscribe() blocks until any
+	// in-flight reapply() that touches this manager finishes when this
+	// is the last subscriber (rmMgr.Stop() → pending.Wait()).
 	m.mu.Lock()
-	mon := m.monitor
+	key := m.monitorKey
+	m.monitorKey = ""
 	m.mu.Unlock()
-	if mon != nil {
-		mon.Stop()
+	if key != "" {
+		rmMgr.Unsubscribe(key)
 	}
 
 	// Remove all routes via this interface (both IPv4 and IPv6)
@@ -1167,8 +1172,15 @@ func (m *DarwinManager) RestoreDNSFromSnapshot(preModDNS map[string][]string) er
 }
 
 func (m *DarwinManager) Cleanup(ifaceName string) error {
-	if m.monitor != nil {
-		m.monitor.Stop()
+	// Defensive Unsubscribe — RemoveRoutes normally handles this, but
+	// some teardown paths (e.g., rollback before RemoveRoutes ran) call
+	// Cleanup directly. Unsubscribe is idempotent on a missing key.
+	m.mu.Lock()
+	key := m.monitorKey
+	m.monitorKey = ""
+	m.mu.Unlock()
+	if key != "" {
+		rmMgr.Unsubscribe(key)
 	}
 	_ = m.RestoreDNS(ifaceName)
 	// Defensive: remove any remaining routes via this interface
