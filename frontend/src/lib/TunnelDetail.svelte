@@ -411,101 +411,171 @@
       <p>{$t('tunnel.no_tunnels')}</p>
     </div>
   {:else}
-    <div class="detail-header"
-      class:connected={isConnected && !noHandshake}
-      class:connecting={isConnecting}
-      class:warning={noHandshake}>
-      {#if renaming}
-        <input
-          class="rename-input"
-          type="text"
-          bind:value={renameValue}
-          on:blur={commitRename}
-          on:keydown={(e) => {
-            if (e.key === 'Enter') commitRename();
-            if (e.key === 'Escape') cancelRename();
-          }}
-          autofocus
-        />
-      {:else}
-        <h2 on:dblclick={startRename} title={$t('tunnel.rename_hint')}>{$selectedTunnel.name}</h2>
-        <button class="btn-rename" on:click={startRename} title="Rename">
-          <Icon name="pencil" size={12} strokeWidth={1.75} />
-        </button>
-      {/if}
-      <div class="header-status">
-        <span class="header-dot"
-          class:on={isConnected && !noHandshake}
-          class:warning={noHandshake}
-          class:connecting={isConnecting}></span>
-        <span class="state-badge" class:on={isConnected && !noHandshake} class:warning={noHandshake} class:connecting={isConnecting}>
-          {#if isConnected && noHandshake}
-            {$t('app.no_handshake')}
-          {:else if isConnected}
-            {$t('app.connected')}
-          {:else if isConnecting}
-            {$t('app.connecting')}
+    <!-- HERO STATUS CARD: big visual, gradient bg by state, large icon -->
+    <div class="hero-card"
+      class:hero-connected={isConnected && !noHandshake}
+      class:hero-connecting={isConnecting}
+      class:hero-warning={noHandshake}
+      class:hero-idle={!isConnected && !isConnecting && !noHandshake}>
+      <div class="hero-glow"></div>
+
+      <div class="hero-icon">
+        {#if isConnected && !noHandshake}
+          <Icon name="shield" size={28} strokeWidth={2} />
+        {:else if isConnecting}
+          <Icon name="zap" size={28} strokeWidth={2} />
+        {:else if noHandshake}
+          <Icon name="triangle-alert" size={28} strokeWidth={2} />
+        {:else}
+          <Icon name="shield-off" size={28} strokeWidth={1.75} />
+        {/if}
+      </div>
+
+      <div class="hero-body">
+        <div class="hero-name-row">
+          {#if renaming}
+            <input
+              class="rename-input"
+              type="text"
+              bind:value={renameValue}
+              on:blur={commitRename}
+              on:keydown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') cancelRename();
+              }}
+              autofocus
+            />
           {:else}
-            {$t('app.disconnected')}
+            <h2 class="hero-name" on:dblclick={startRename} title={$t('tunnel.rename_hint')}>{$selectedTunnel.name}</h2>
+            <button class="btn-rename" on:click={startRename} title="Rename">
+              <Icon name="pencil" size={12} strokeWidth={1.75} />
+            </button>
           {/if}
-        </span>
+        </div>
+        <div class="hero-status-line">
+          <span class="hero-dot"
+            class:on={isConnected && !noHandshake}
+            class:warning={noHandshake}
+            class:connecting={isConnecting}></span>
+          <span class="hero-state-text">
+            {#if isConnected && noHandshake}
+              {$t('app.no_handshake')}
+            {:else if isConnected}
+              {$t('app.connected')}
+            {:else if isConnecting}
+              {$t('app.connecting')}
+            {:else}
+              {$t('app.disconnected')}
+            {/if}
+          </span>
+          {#if $selectedTunnel.endpoint}
+            <span class="hero-sep">·</span>
+            <span class="hero-endpoint">{$selectedTunnel.endpoint}</span>
+          {/if}
+        </div>
       </div>
     </div>
 
+    <!-- PRIMARY ACTION: big full-width button -->
+    <div class="primary-action">
+      {#if isConnected}
+        <button class="btn-primary-large btn-disconnect-lg" on:click={disconnect} disabled={loading}>
+          <Icon name="lock" size={16} strokeWidth={2.25} />
+          <span>{$t('tunnel.disconnect')}</span>
+        </button>
+      {:else}
+        <button class="btn-primary-large btn-connect-lg" on:click={connect} disabled={loading}>
+          {#if loading || isConnecting}
+            <span class="spinner"></span>
+            <span>{$t('app.connecting')}</span>
+          {:else}
+            <Icon name="zap" size={16} strokeWidth={2.25} />
+            <span>{$t('tunnel.connect')}</span>
+          {/if}
+        </button>
+      {/if}
+    </div>
+
+    <!-- STATS HERO: big numbers, colored icons, 3-up grid -->
     {#if isConnected && status.state === 'connected'}
-      <div class="stats-grid">
-        <div class="stat">
-          <span class="stat-label">{$t('tunnel.rx')}</span>
-          <span class="stat-value down">{formatBytes(status.rx_bytes || 0)}</span>
+      <div class="stats-hero">
+        <div class="stat-card stat-rx">
+          <div class="stat-card-top">
+            <div class="stat-icon"><Icon name="arrow-down" size={13} strokeWidth={2.5} /></div>
+            <span class="stat-label">{$t('tunnel.rx')}</span>
+          </div>
+          <div class="stat-value">{formatBytes(status.rx_bytes || 0)}</div>
         </div>
-        <div class="stat">
-          <span class="stat-label">{$t('tunnel.tx')}</span>
-          <span class="stat-value up">{formatBytes(status.tx_bytes || 0)}</span>
+        <div class="stat-card stat-tx">
+          <div class="stat-card-top">
+            <div class="stat-icon"><Icon name="arrow-up" size={13} strokeWidth={2.5} /></div>
+            <span class="stat-label">{$t('tunnel.tx')}</span>
+          </div>
+          <div class="stat-value">{formatBytes(status.tx_bytes || 0)}</div>
         </div>
-        <div class="stat">
-          <span class="stat-label">{$t('tunnel.handshake')}</span>
-          <span class="stat-value">{status.last_handshake || '-'}</span>
+        <div class="stat-card stat-latency">
+          <div class="stat-card-top">
+            <div class="stat-icon"><Icon name="activity" size={13} strokeWidth={2.5} /></div>
+            <span class="stat-label">{$t('tunnel.latency')}</span>
+          </div>
+          <div class="stat-value">
+            {status.latency_ms ? `${Math.round(status.latency_ms)}` : '—'}
+            {#if status.latency_ms}<span class="stat-unit">ms</span>{/if}
+          </div>
         </div>
-        <div class="stat">
-          <span class="stat-label">{$t('tunnel.duration')}</span>
-          <span class="stat-value">{status.duration || '-'}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">{$t('tunnel.latency')}</span>
-          <span class="stat-value">{status.latency_ms ? `${Math.round(status.latency_ms)} ms` : '—'}</span>
+      </div>
+
+      <div class="stats-meta">
+        <span class="meta-item">
+          <Icon name="clock" size={11} strokeWidth={2} />
+          {$t('tunnel.handshake')}: {status.last_handshake || '—'}
+        </span>
+        <span class="meta-sep">·</span>
+        <span class="meta-item">{$t('tunnel.duration')}: {status.duration || '—'}</span>
+      </div>
+    {/if}
+
+    <!-- INFO SECTION: card with rows + dividers -->
+    {#if $selectedTunnel.endpoint || detail}
+      <div class="info-section">
+        <h3 class="section-label">{$t('tunnel.endpoint')}</h3>
+        <div class="info-card">
+          {#if $selectedTunnel.endpoint}
+            <div class="info-row">
+              <span class="info-label">{$t('tunnel.endpoint')}</span>
+              <span class="info-value mono">{$selectedTunnel.endpoint}</span>
+            </div>
+          {/if}
+          {#if detail}
+            {#each detail.Peers || [] as peer}
+              {#if $selectedTunnel.endpoint || (peer.AllowedIPs || []).length}
+                <div class="row-divider"></div>
+              {/if}
+              <div class="info-row">
+                <span class="info-label">{$t('tunnel.allowed_ips')}</span>
+                <span class="info-value">{(peer.AllowedIPs || []).join(', ') || '—'}</span>
+              </div>
+              <div class="row-divider"></div>
+              <div class="info-row">
+                <span class="info-label">{$t('tunnel.public_key')}</span>
+                <span class="info-value mono">{peer.PublicKey?.substring(0, 20)}…</span>
+              </div>
+            {/each}
+            {#if detail.Interface?.DNS?.length}
+              <div class="row-divider"></div>
+              <div class="info-row">
+                <span class="info-label">DNS</span>
+                <span class="info-value">{detail.Interface.DNS.join(', ')}</span>
+              </div>
+            {/if}
+          {/if}
         </div>
       </div>
     {/if}
 
-    <div class="detail-info">
-      {#if $selectedTunnel.endpoint}
-        <div class="info-row">
-          <span class="label">{$t('tunnel.endpoint')}</span>
-          <span class="value">{$selectedTunnel.endpoint}</span>
-        </div>
-      {/if}
-      {#if detail}
-        {#each detail.Peers || [] as peer}
-          <div class="info-row">
-            <span class="label">{$t('tunnel.allowed_ips')}</span>
-            <span class="value">{(peer.AllowedIPs || []).join(', ')}</span>
-          </div>
-          <div class="info-row">
-            <span class="label">{$t('tunnel.public_key')}</span>
-            <span class="value mono">{peer.PublicKey?.substring(0, 20)}...</span>
-          </div>
-        {/each}
-        {#if detail.Interface?.DNS?.length}
-          <div class="info-row">
-            <span class="label">DNS</span>
-            <span class="value">{detail.Interface.DNS.join(', ')}</span>
-          </div>
-        {/if}
-      {/if}
-    </div>
-
-    <div class="notes-block">
-      <label class="notes-label" for="tunnel-notes">{$t('tunnel.notes')}</label>
+    <!-- NOTES -->
+    <div class="info-section">
+      <h3 class="section-label">{$t('tunnel.notes')}</h3>
       <textarea
         id="tunnel-notes"
         class="notes-textarea"
@@ -523,34 +593,26 @@
       <div class="error-msg">{error}</div>
     {/if}
 
-    <div class="actions">
-      {#if isConnected}
-        <button class="btn btn-disconnect" on:click={disconnect} disabled={loading}>
-          {$t('tunnel.disconnect')}
-        </button>
-      {:else}
-        <button class="btn btn-connect" on:click={connect} disabled={loading}>
-          {loading ? $t('app.connecting') : $t('tunnel.connect')}
-        </button>
-      {/if}
-      <button class="btn btn-secondary" on:click={() => dispatch('edit', $selectedTunnel.name)}>
-        <Icon name="file-pen" size={13} strokeWidth={1.75} />
-        {$t('tunnel.edit')}
+    <!-- SECONDARY ACTIONS: 4-up icon button grid -->
+    <div class="secondary-actions">
+      <button class="btn-icon-action" on:click={() => dispatch('edit', $selectedTunnel.name)}>
+        <Icon name="file-pen" size={15} strokeWidth={1.75} />
+        <span>{$t('tunnel.edit')}</span>
       </button>
-      <button class="btn btn-secondary" on:click={() => dispatch('export', $selectedTunnel.name)}>
-        <Icon name="share" size={13} strokeWidth={1.75} />
-        {$t('tunnel.export')}
+      <button class="btn-icon-action" on:click={() => dispatch('export', $selectedTunnel.name)}>
+        <Icon name="share" size={15} strokeWidth={1.75} />
+        <span>{$t('tunnel.export')}</span>
       </button>
-      <button class="btn btn-secondary wifi-btn" on:click={openWifiModal}>
-        <Icon name="wifi" size={13} strokeWidth={1.75} />
-        {$t('tunnel.wifi_auto_connect')}
+      <button class="btn-icon-action wifi-btn" on:click={openWifiModal}>
+        <Icon name="wifi" size={15} strokeWidth={1.75} />
+        <span>{$t('tunnel.wifi_auto_connect')}</span>
         {#if wifiSsids.length > 0}
           <span class="wifi-count">{wifiSsids.length}</span>
         {/if}
       </button>
-      <button class="btn btn-danger" on:click={askDelete}>
-        <Icon name="trash-2" size={13} strokeWidth={1.75} />
-        {$t('tunnel.delete')}
+      <button class="btn-icon-action btn-icon-danger" on:click={askDelete}>
+        <Icon name="trash-2" size={15} strokeWidth={1.75} />
+        <span>{$t('tunnel.delete')}</span>
       </button>
     </div>
   {/if}
@@ -642,24 +704,22 @@
 {/if}
 
 <style>
-  /* ---------- Wi-Fi auto-connect button + modal ---------- */
-  .wifi-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
+  /* ---------- Wi-Fi auto-connect badge + modal ---------- */
   .wifi-count {
+    position: absolute;
+    top: 6px;
+    right: 6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 6px;
-    border-radius: 9px;
-    background: var(--accent-blue, #007AFF);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: var(--accent);
     color: #fff;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
     line-height: 1;
   }
   .wifi-dialog {
@@ -830,9 +890,12 @@
   /* ---------- Layout ---------- */
   .detail-panel {
     flex: 1;
-    padding: var(--space-6) var(--space-6);
-    padding-top: 52px; /* clears the macOS traffic-light inset */
+    padding: 52px var(--space-7, 28px) var(--space-7, 28px);
     overflow-y: auto;
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
   }
   .no-selection {
     display: flex;
@@ -843,67 +906,148 @@
     font: var(--text-body);
   }
 
-  /* ---------- Header: color-tinted status card ---------- */
-  .detail-header {
+  /* ========== HERO STATUS CARD ==========
+     Big visual element. Gradient background tinted by state.
+     Large icon tile + tunnel name + state line. */
+  .hero-card {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-5);
-    padding: var(--space-3) var(--space-4);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius-md);
+    gap: 16px;
+    padding: 20px;
+    border-radius: 16px;
     background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    margin-bottom: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   }
   @media (prefers-reduced-motion: no-preference) {
-    .detail-header {
-      transition: background-color var(--dur-base) var(--ease-out),
-                  border-color var(--dur-base) var(--ease-out);
+    .hero-card {
+      transition: background 280ms ease, border-color 280ms ease, box-shadow 280ms ease;
     }
   }
-  .detail-header.connected {
-    background: color-mix(in srgb, var(--green) 8%, var(--bg-card));
+  .hero-card.hero-connected {
+    background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--green) 22%, var(--bg-card)) 0%, var(--bg-card) 70%);
     border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--green) 14%, transparent);
   }
-  .detail-header.warning {
-    background: color-mix(in srgb, var(--orange, #FF9500) 8%, var(--bg-card));
-    border-color: color-mix(in srgb, var(--orange, #FF9500) 30%, var(--border));
-  }
-  .detail-header.connecting {
-    background: color-mix(in srgb, var(--yellow) 8%, var(--bg-card));
+  .hero-card.hero-connecting {
+    background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--yellow) 22%, var(--bg-card)) 0%, var(--bg-card) 70%);
     border-color: color-mix(in srgb, var(--yellow) 30%, var(--border));
   }
-  .detail-header h2 {
-    margin: 0;
-    font: var(--text-title-1);
-    color: var(--text-primary);
-    cursor: text;
+  .hero-card.hero-warning {
+    background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--orange, #FF9500) 22%, var(--bg-card)) 0%, var(--bg-card) 70%);
+    border-color: color-mix(in srgb, var(--orange, #FF9500) 30%, var(--border));
+  }
+
+  /* Decorative glow blob in the top-right of connected state */
+  .hero-glow {
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(40px);
+    opacity: 0;
+  }
+  .hero-card.hero-connected .hero-glow {
+    background: var(--green);
+    opacity: 0.18;
+  }
+  .hero-card.hero-connecting .hero-glow {
+    background: var(--yellow);
+    opacity: 0.18;
+  }
+  .hero-card.hero-warning .hero-glow {
+    background: var(--orange, #FF9500);
+    opacity: 0.18;
+  }
+
+  /* Hero icon tile — 56x56 rounded square with state-colored bg/fg */
+  .hero-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--text-muted) 14%, var(--bg-card));
+    color: var(--text-muted);
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .hero-card.hero-connected .hero-icon {
+    background: color-mix(in srgb, var(--green) 22%, transparent);
+    color: var(--green);
+  }
+  .hero-card.hero-connecting .hero-icon {
+    background: color-mix(in srgb, var(--yellow) 22%, transparent);
+    color: var(--yellow);
+  }
+  .hero-card.hero-warning .hero-icon {
+    background: color-mix(in srgb, var(--orange, #FF9500) 22%, transparent);
+    color: var(--orange, #FF9500);
+  }
+  @keyframes hero-icon-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
+    55% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--green) 0%, transparent); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-card.hero-connected .hero-icon {
+      animation: hero-icon-pulse 2.6s ease-out infinite;
+    }
+  }
+
+  .hero-body {
     flex: 1;
     min-width: 0;
+    z-index: 1;
+  }
+  .hero-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hero-name {
+    margin: 0;
+    font: 700 22px/28px var(--font-sans);
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    cursor: text;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .btn-rename {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 0;
-    color: var(--text-secondary);
+    color: var(--text-muted);
     cursor: pointer;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-xs);
-    font: var(--text-body);
+    padding: 4px;
+    border-radius: 6px;
     opacity: 0.65;
-    flex-shrink: 0;
   }
   .btn-rename:hover {
-    background: var(--bg-hover);
+    background: rgba(255,255,255,0.06);
     opacity: 1;
   }
   .rename-input {
-    font: var(--text-title-1);
-    padding: 2px var(--space-2);
+    font: 700 22px/28px var(--font-sans);
+    letter-spacing: -0.02em;
+    padding: 2px 8px;
     background: var(--bg-input);
     border: 1px solid var(--accent);
-    border-radius: var(--radius-sm);
+    border-radius: 6px;
     color: var(--text-primary);
     outline: none;
     flex: 1;
@@ -911,244 +1055,329 @@
     box-shadow: 0 0 0 3px var(--blue-tint);
   }
 
-  /* Status cluster: dot + badge grouped on the right */
-  .header-status {
+  .hero-status-line {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
-    margin-left: auto;
+    gap: 6px;
+    margin-top: 6px;
+    font: 500 12px/16px var(--font-sans);
+    color: var(--text-secondary);
+    min-width: 0;
   }
-  .header-dot {
-    width: 10px;
-    height: 10px;
+  .hero-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--text-muted) 50%, transparent);
+    background: color-mix(in srgb, var(--text-muted) 55%, transparent);
     flex-shrink: 0;
   }
-  .header-dot.on {
+  .hero-dot.on {
     background: var(--green);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--green) 90%, transparent);
   }
-  .header-dot.warning {
-    background: var(--orange, #FF9500);
-  }
-  @keyframes dot-glow {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent); }
-    55% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--green) 0%, transparent); }
-  }
-  @keyframes spin-ring {
-    to { transform: rotate(360deg); }
+  .hero-dot.warning { background: var(--orange, #FF9500); }
+  @keyframes dot-blink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
   }
   @media (prefers-reduced-motion: no-preference) {
-    .header-dot.on {
-      animation: dot-glow 2.4s ease-out infinite;
-    }
-    .header-dot.connecting {
-      background: transparent;
-      border: 2px solid var(--yellow);
-      border-top-color: transparent;
-      animation: spin-ring 0.8s linear infinite;
+    .hero-dot.connecting {
+      background: var(--yellow);
+      animation: dot-blink 1.2s ease-in-out infinite;
     }
   }
-
-  /* ---------- State badge (connected / connecting / disconnected) ---------- */
-  .state-badge {
-    padding: 2px var(--space-2);
-    border-radius: var(--radius-xs);
-    font: var(--text-footnote);
+  .hero-state-text {
+    color: var(--text-primary);
     font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    background: var(--bg-card);
-    color: var(--text-muted);
+    letter-spacing: -0.01em;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    .state-badge {
-      transition: background-color var(--dur-base) var(--ease-out),
-                  color var(--dur-base) var(--ease-out);
-    }
-  }
-  .state-badge.on {
-    background: var(--green-tint);
-    color: var(--green);
-  }
-  .state-badge.connecting {
-    background: var(--yellow-tint);
-    color: var(--yellow);
-  }
-  .state-badge.warning {
-    background: var(--orange-tint, rgba(255, 149, 0, 0.12));
-    color: var(--orange, #FF9500);
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .state-badge.connecting {
-      animation: pulse 1.6s ease-in-out infinite;
-    }
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.55; }
+  .hero-card.hero-connected .hero-state-text { color: var(--green); }
+  .hero-card.hero-connecting .hero-state-text { color: var(--yellow); }
+  .hero-card.hero-warning .hero-state-text { color: var(--orange, #FF9500); }
+  .hero-sep { color: var(--text-muted); opacity: 0.6; }
+  .hero-endpoint {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
-  /* ---------- Stats grid ---------- */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-2);
-    margin-bottom: var(--space-5);
+  /* ========== PRIMARY ACTION ==========
+     Big full-width gradient button below the hero card. */
+  .primary-action {
+    margin-bottom: 18px;
   }
-  .stat {
+  .btn-primary-large {
+    width: 100%;
+    height: 48px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 12px;
+    font: 600 14px/20px var(--font-sans);
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn-primary-large {
+      transition: filter 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+    }
+  }
+  .btn-primary-large:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-connect-lg {
+    background: linear-gradient(135deg, var(--green) 0%, color-mix(in srgb, var(--green) 75%, var(--accent)) 100%);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--green) 30%, transparent),
+                inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .btn-connect-lg:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--green) 38%, transparent),
+                inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-connect-lg:active:not(:disabled) { filter: brightness(0.94); transform: translateY(0); }
+
+  .btn-disconnect-lg {
+    background: linear-gradient(135deg, var(--red) 0%, color-mix(in srgb, var(--red) 75%, var(--orange, #FF9500)) 100%);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--red) 28%, transparent),
+                inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .btn-disconnect-lg:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--red) 36%, transparent),
+                inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-disconnect-lg:active:not(:disabled) { filter: brightness(0.94); transform: translateY(0); }
+
+  /* Spinner inside connect button when connecting */
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ========== STATS HERO ==========
+     3-column grid of stat cards with big numbers and color-coded icons. */
+  .stats-hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .stat-card {
+    padding: 14px 14px 12px;
     background: var(--bg-card);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .stat-card-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stat-icon {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .stat-card.stat-rx .stat-icon {
+    background: color-mix(in srgb, var(--green) 22%, transparent);
+    color: var(--green);
+  }
+  .stat-card.stat-tx .stat-icon {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--accent);
+  }
+  .stat-card.stat-latency .stat-icon {
+    background: color-mix(in srgb, var(--yellow) 22%, transparent);
+    color: var(--yellow);
   }
   .stat-label {
-    display: block;
-    font: var(--text-footnote);
-    font-weight: 500;
-    color: var(--text-secondary);
+    font: 500 10px/13px var(--font-sans);
+    color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: var(--space-1);
+    letter-spacing: 0.08em;
   }
   .stat-value {
-    font: 600 17px/22px var(--font-sans);
-    font-feature-settings: "tnum";   /* tabular numerals for stable alignment */
+    font: 700 22px/26px var(--font-sans);
     color: var(--text-primary);
+    font-feature-settings: "tnum";
+    letter-spacing: -0.02em;
   }
-  .stat-value.down { color: var(--stats-rx); }
-  .stat-value.up   { color: var(--stats-tx); }
+  .stat-unit {
+    font: 500 12px/16px var(--font-sans);
+    color: var(--text-muted);
+    letter-spacing: 0;
+    margin-left: 2px;
+  }
 
-  /* ---------- Info rows ---------- */
-  .detail-info {
-    margin-bottom: var(--space-5);
+  .stats-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 18px 2px;
+    font: 11px/15px var(--font-sans);
+    color: var(--text-muted);
+  }
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .meta-sep { opacity: 0.5; }
+
+  /* ========== INFO SECTION ==========
+     Card with rows + hairline dividers (iOS Settings style). */
+  .info-section {
+    margin-bottom: 16px;
+  }
+  .section-label {
+    margin: 0 0 8px 4px;
+    font: 500 10px/13px var(--font-sans);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .info-card {
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
   }
   .info-row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: var(--space-4);
-    padding: var(--space-2) 0;
-    border-bottom: 0.5px solid var(--border);
-    font: var(--text-body);
+    gap: 16px;
+    padding: 11px 14px;
+    font: 13px/18px var(--font-sans);
   }
-  .info-row:last-child { border-bottom: 0; }
-  .label { color: var(--text-secondary); flex-shrink: 0; }
-  .value {
+  .row-divider {
+    height: 0.5px;
+    background: var(--border);
+    margin: 0 14px;
+  }
+  .info-label { color: var(--text-secondary); flex-shrink: 0; }
+  .info-value {
     color: var(--text-primary);
     text-align: right;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .value.mono {
+  .info-value.mono {
     font-family: var(--font-mono);
     font-size: 11px;
   }
 
-  /* ---------- Notes ---------- */
-  .notes-block {
-    margin-bottom: var(--space-4);
-  }
-  .notes-label {
-    display: block;
-    font: var(--text-footnote);
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: var(--space-2);
-  }
+  /* ========== NOTES ========== */
   .notes-textarea {
     width: 100%;
     box-sizing: border-box;
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
-    color: var(--text-primary);
-    font: var(--text-body);
-    line-height: 1.4;
-    resize: vertical;
-    min-height: 44px;
-    max-height: 160px;
-  }
-  .notes-textarea:focus-visible {
-    outline: 2px solid var(--accent-blue, #007AFF);
-    outline-offset: 0;
-    border-color: var(--accent-blue, #007AFF);
-  }
-  .notes-textarea::placeholder {
-    color: var(--text-muted);
-  }
-  .notes-error {
-    margin-top: var(--space-1);
-    font: var(--text-footnote);
-    color: var(--red);
-  }
-
-  /* ---------- Error message ---------- */
-  .error-msg {
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
-    background: var(--error-bg);
-    border: 0.5px solid var(--red);
-    border-radius: var(--radius-sm);
-    color: var(--error-text);
-    font: var(--text-body);
-  }
-
-  /* ---------- Actions (button row) ---------- */
-  .actions {
-    display: flex;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-  .btn {
-    height: 28px;
-    padding: 0 var(--space-3);
-    border: 0;
-    border-radius: var(--radius-sm);
-    font: var(--text-headline);
-    cursor: pointer;
-    color: var(--text-primary);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .btn {
-      transition: background-color var(--dur-fast) var(--ease-out),
-                  filter var(--dur-fast) var(--ease-out),
-                  border-color var(--dur-fast) var(--ease-out);
-    }
-  }
-  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-  .btn-connect {
-    background: var(--accent);
-    color: var(--text-inverse);
-  }
-  .btn-connect:hover:not(:disabled) { filter: brightness(1.08); }
-  .btn-connect:active:not(:disabled) { filter: brightness(0.94); }
-  .btn-disconnect {
-    background: var(--red);
-    color: var(--text-inverse);
-  }
-  .btn-disconnect:hover:not(:disabled) { filter: brightness(1.08); }
-  .btn-disconnect:active:not(:disabled) { filter: brightness(0.94); }
-  .btn-secondary {
+    padding: 10px 14px;
     background: var(--bg-card);
     border: 0.5px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font: 13px/18px var(--font-sans);
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 56px;
+    max-height: 200px;
+    outline: none;
   }
-  .btn-secondary:hover { background: var(--bg-hover); }
-  .btn-secondary:active { background: var(--bg-active); }
-  .btn-danger {
-    background: transparent;
+  @media (prefers-reduced-motion: no-preference) {
+    .notes-textarea {
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+  }
+  .notes-textarea:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--blue-tint);
+  }
+  .notes-textarea::placeholder { color: var(--text-muted); }
+  .notes-error {
+    margin: 6px 0 0 4px;
+    font: 11px/15px var(--font-sans);
     color: var(--red);
-    border: 0.5px solid var(--red);
   }
-  .btn-danger:hover { background: var(--error-bg); }
+
+  /* ========== ERROR ========== */
+  .error-msg {
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: var(--error-bg);
+    border: 0.5px solid var(--red);
+    border-radius: 10px;
+    color: var(--error-text);
+    font: 13px/18px var(--font-sans);
+  }
+
+  /* ========== SECONDARY ACTIONS ==========
+     4-column icon-button grid at the bottom. */
+  .secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .btn-icon-action {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 64px;
+    padding: 0 8px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font: 500 11px/14px var(--font-sans);
+    cursor: pointer;
+    position: relative;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn-icon-action {
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+    }
+  }
+  .btn-icon-action:hover {
+    background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    transform: translateY(-1px);
+  }
+  .btn-icon-action:active { transform: translateY(0); background: var(--bg-active); }
+  .btn-icon-action.btn-icon-danger { color: var(--red); }
+  .btn-icon-action.btn-icon-danger:hover {
+    background: color-mix(in srgb, var(--red) 8%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--red) 40%, var(--border));
+    color: var(--red);
+  }
 
   /* ---------- Delete confirmation dialog ---------- */
   .confirm-backdrop {

@@ -140,6 +140,11 @@
     "about_desc": "모던 UI와 편의 기능을 갖춘 크로스 플랫폼 WireGuard VPN 클라이언트",
     "about_issues": "문제 신고",
     "about_license": "라이선스 (MIT)",
+    "section_appearance": "외관",
+    "section_startup": "시작",
+    "section_security": "보안",
+    "section_connection": "연결",
+    "section_logging": "로깅",
     "up_to_date": "최신 버전입니다."
   },
   "confirm": {

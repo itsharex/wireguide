@@ -140,7 +140,12 @@
     "about_desc": "A cross-platform WireGuard VPN client with modern UI and quality-of-life features.",
     "about_issues": "Report Issue",
     "about_license": "License (MIT)",
-    "up_to_date": "You're on the latest version."
+    "up_to_date": "You're on the latest version.",
+    "section_appearance": "Appearance",
+    "section_startup": "Startup",
+    "section_security": "Security",
+    "section_connection": "Connection",
+    "section_logging": "Logging"
   },
   "confirm": {
     "delete_title": "Delete Tunnel",

@@ -23,7 +23,6 @@
   // View state
   let currentView = 'tunnels'; // 'tunnels' | 'history' | 'dnsleak' | 'routes' | 'logs'
 
-  $: isToolsView = currentView === 'dnsleak' || currentView === 'routes';
 
   // Modal state
   let showEditor = false;
@@ -560,45 +559,67 @@
 
   <div class="layout">
     <nav class="sidebar">
-      <div class="app-brand">
+      <div class="brand-area">
         <div class="brand-mark">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
             <path d="M9 12l2 2 4-4"/>
           </svg>
         </div>
-        <span class="brand-name">WireGuide</span>
+        <div class="brand-text">
+          <span class="brand-name">WireGuide</span>
+          <span class="brand-tagline">WireGuard VPN</span>
+        </div>
       </div>
 
-      <button class="nav-item" class:active={currentView === 'tunnels'} on:click={() => currentView = 'tunnels'}>
-        <Icon name="shield" size={15} strokeWidth={1.75} />
-        {$t('nav.tunnels')}
-      </button>
-      <button class="nav-item" class:active={currentView === 'history'} on:click={() => currentView = 'history'}>
-        <Icon name="clock" size={15} strokeWidth={1.75} />
-        {$t('nav.history')}
-      </button>
-      <button class="nav-item nav-section" class:section-active={isToolsView} on:click={() => currentView = 'dnsleak'}>
-        <Icon name="wrench" size={15} strokeWidth={1.75} />
-        {$t('nav.tools')}
-      </button>
-      <button class="nav-sub-item" class:active={currentView === 'dnsleak'} on:click={() => currentView = 'dnsleak'}>
-        {$t('tools.tab_dns_leak')}
-      </button>
-      <button class="nav-sub-item" class:active={currentView === 'routes'} on:click={() => currentView = 'routes'}>
-        {$t('tools.tab_routes')}
-      </button>
-      <button class="nav-item" class:active={currentView === 'logs'} on:click={() => currentView = 'logs'}>
-        <Icon name="terminal" size={15} strokeWidth={1.75} />
-        {$t('nav.logs')}
-      </button>
+      <div class="nav-group">
+        <button class="nav-item" class:active={currentView === 'tunnels'} on:click={() => currentView = 'tunnels'}>
+          <span class="nav-icon-box">
+            <Icon name="shield" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('nav.tunnels')}</span>
+          {#if ($connectionStatus?.active_tunnels || []).length > 0}
+            <span class="nav-badge">{($connectionStatus.active_tunnels).length}</span>
+          {/if}
+        </button>
+        <button class="nav-item" class:active={currentView === 'history'} on:click={() => currentView = 'history'}>
+          <span class="nav-icon-box">
+            <Icon name="clock" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('nav.history')}</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group-label">{$t('nav.tools')}</span>
+        <button class="nav-item" class:active={currentView === 'dnsleak'} on:click={() => currentView = 'dnsleak'}>
+          <span class="nav-icon-box">
+            <Icon name="activity" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('tools.tab_dns_leak')}</span>
+        </button>
+        <button class="nav-item" class:active={currentView === 'routes'} on:click={() => currentView = 'routes'}>
+          <span class="nav-icon-box">
+            <Icon name="network" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('tools.tab_routes')}</span>
+        </button>
+        <button class="nav-item" class:active={currentView === 'logs'} on:click={() => currentView = 'logs'}>
+          <span class="nav-icon-box">
+            <Icon name="terminal" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('nav.logs')}</span>
+        </button>
+      </div>
 
       <div class="nav-spacer"></div>
 
       <div class="nav-footer">
         <button class="nav-item" on:click={() => showSettings = true}>
-          <Icon name="settings" size={15} strokeWidth={1.75} />
-          {$t('nav.settings')}
+          <span class="nav-icon-box">
+            <Icon name="settings" size={15} strokeWidth={2} />
+          </span>
+          <span class="nav-label">{$t('nav.settings')}</span>
         </button>
       </div>
     </nav>
@@ -794,134 +815,172 @@
     height: 100%;
   }
 
-  /* ---------- Sidebar (macOS source-list style) ---------- */
+  /* ========== SIDEBAR — Material Design Navigation Drawer + Apple Settings hybrid ========== */
   .sidebar {
-    width: 200px;
+    width: 240px;
     background: var(--bg-secondary);
     border-right: 0.5px solid var(--border);
     display: flex;
     flex-direction: column;
-    padding-top: 52px; /* traffic-light clearance */
+    padding-top: 52px;
+    flex-shrink: 0;
   }
 
-  /* Brand mark + app name */
-  .app-brand {
+  /* ===== Brand area: gradient icon tile + name + tagline ===== */
+  .brand-area {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3) var(--space-4) var(--space-3);
+    gap: 12px;
+    padding: 8px 16px 18px 16px;
   }
   .brand-mark {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    background: var(--accent);
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 100%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 65%, #a78bfa) 100%);
     color: #fff;
     flex-shrink: 0;
+    box-shadow:
+      0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.2),
+      inset 0 -1px 0 rgba(0,0,0,0.08);
+  }
+  .brand-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 1px;
   }
   .brand-name {
-    font: 600 13px/18px var(--font-sans);
+    font: 700 14px/18px var(--font-sans);
     color: var(--text-primary);
     letter-spacing: -0.01em;
   }
+  .brand-tagline {
+    font: 500 10px/13px var(--font-sans);
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
 
+  /* ===== Nav groups ===== */
+  .nav-group {
+    padding: 0 8px;
+  }
+  .nav-group + .nav-group {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 0.5px solid var(--border);
+  }
+  .nav-group-label {
+    display: block;
+    padding: 4px 10px 6px;
+    font: 600 10px/13px var(--font-sans);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    user-select: none;
+  }
+
+  /* ===== Nav items — bigger, with icon container boxes ===== */
   .nav-item {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    height: var(--row-std);
-    padding: 0 var(--space-2) 0 var(--space-3);
-    margin: 0 var(--space-2);
+    gap: 10px;
+    width: 100%;
+    height: 42px;
+    padding: 0 8px;
+    margin-bottom: 1px;
     background: transparent;
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: 10px;
     color: var(--text-secondary);
-    font: var(--text-body);
+    font: 500 13px/18px var(--font-sans);
     cursor: pointer;
     text-align: left;
+    position: relative;
   }
   @media (prefers-reduced-motion: no-preference) {
-    .nav-item {
-      transition: background-color var(--dur-fast) var(--ease-out),
-                  color var(--dur-fast) var(--ease-out);
+    .nav-item, .nav-icon-box {
+      transition: background-color 140ms ease, color 140ms ease, box-shadow 200ms ease, transform 140ms ease;
     }
   }
   .nav-item:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
-  .nav-item.active {
-    background: var(--bg-selected);
+  .nav-item:hover .nav-icon-box {
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
     color: var(--text-primary);
-    font-weight: 500;
   }
-  .nav-spacer {
-    flex: 1;
+  .nav-item:active:not(.active) {
+    background: var(--bg-active);
   }
 
-  /* Sidebar footer — hairline divider defines a dedicated Settings region.
-   * The button inside fills the ENTIRE footer area (no horizontal margin,
-   * flush edges, taller height) so anywhere the user clicks below the
-   * separator line registers as a Settings tap. Drawing a separator and
-   * then making only a narrow pill clickable would be a broken affordance. */
-  .nav-footer {
-    border-top: 0.5px solid var(--border);
-    display: flex;
-    flex-direction: column;
-  }
-  .nav-footer .nav-item {
-    /* Override the default .nav-item pill treatment — in the footer the
-     * button IS the full-width bar, not a floating rounded item. */
-    margin: 0;
-    width: 100%;
-    height: 44px;
-    padding: 0 var(--space-4);
-    border-radius: 0;
-  }
-  /* Tools section header — no background highlight, just text colour change */
-  .nav-section.section-active {
-    color: var(--text-primary);
-    font-weight: 500;
-    background: transparent;
-  }
-
-  /* Sidebar sub-items (Tools children) */
-  .nav-sub-item {
+  /* Icon container: 28×28 rounded tile — Apple Music / Settings style */
+  .nav-icon-box {
     display: flex;
     align-items: center;
-    height: var(--row-compact);
-    padding: 0 var(--space-2) 0 var(--space-8);
-    margin: 0 var(--space-2);
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius-sm);
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
     color: var(--text-secondary);
-    font: var(--text-callout);
-    text-align: left;
-    cursor: pointer;
-    width: calc(100% - var(--space-4));
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .nav-sub-item {
-      transition: background-color var(--dur-fast) var(--ease-out),
-                  color var(--dur-fast) var(--ease-out);
-    }
-  }
-  .nav-sub-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-  .nav-sub-item.active {
-    background: var(--bg-selected);
-    color: var(--text-primary);
-    font-weight: 500;
+    flex-shrink: 0;
   }
 
-  .nav-footer .nav-item:hover {
-    background: var(--bg-hover);
+  .nav-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.005em;
   }
-  .nav-footer .nav-item:active {
-    background: var(--bg-active);
+
+  /* Connection count badge on Tunnels row */
+  .nav-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: var(--green);
+    color: #fff;
+    font: 700 10px/1 var(--font-sans);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--green) 50%, transparent);
+    flex-shrink: 0;
+  }
+
+  /* Active state: filled accent pill + glowing icon tile + bold accent text */
+  .nav-item.active {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .nav-item.active .nav-icon-box {
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    color: #fff;
+    box-shadow:
+      0 4px 10px color-mix(in srgb, var(--accent) 40%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+
+  .nav-spacer { flex: 1; }
+
+  /* Footer — consistent with main nav items, hairline divider above */
+  .nav-footer {
+    padding: 8px;
+    border-top: 0.5px solid var(--border);
   }
 
   /* ---------- Main content ---------- */

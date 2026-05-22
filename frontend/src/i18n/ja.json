@@ -140,6 +140,11 @@
     "about_desc": "モダンUIと便利な機能を備えたクロスプラットフォーム WireGuard VPNクライアント",
     "about_issues": "問題を報告",
     "about_license": "ライセンス (MIT)",
+    "section_appearance": "外観",
+    "section_startup": "起動",
+    "section_security": "セキュリティ",
+    "section_connection": "接続",
+    "section_logging": "ログ",
     "up_to_date": "最新バージョンです。"
   },
   "confirm": {

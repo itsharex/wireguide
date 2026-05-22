@@ -4,6 +4,7 @@
   import { applyTheme } from '../stores/theme.js';
   import { connectionStatus, tunnels } from '../stores/tunnels.js';
   import WifiRules from './WifiRules.svelte';
+  import Icon from './Icon.svelte';
 
   export let TunnelService;
   export let onClose = () => {};
@@ -241,109 +242,138 @@
     <div class="settings-layout">
       <nav class="settings-sidebar" role="tablist" aria-label="Settings sections">
         <button role="tab" aria-selected={activeTab === 'general'} class:active={activeTab === 'general'} on:click={() => activeTab = 'general'}>
-          {$t('settings.general')}
+          <Icon name="settings" size={14} strokeWidth={1.75} />
+          <span>{$t('settings.general')}</span>
         </button>
         <button role="tab" aria-selected={activeTab === 'advanced'} class:active={activeTab === 'advanced'} on:click={() => activeTab = 'advanced'}>
-          {$t('settings.advanced')}
+          <Icon name="wrench" size={14} strokeWidth={1.75} />
+          <span>{$t('settings.advanced')}</span>
         </button>
         <button role="tab" aria-selected={activeTab === 'wifi_rules'} class:active={activeTab === 'wifi_rules'} on:click={() => activeTab = 'wifi_rules'}>
-          {$t('settings.wifi_rules')}
+          <Icon name="wifi" size={14} strokeWidth={1.75} />
+          <span>{$t('settings.wifi_rules')}</span>
         </button>
         <button role="tab" aria-selected={activeTab === 'about'} class:active={activeTab === 'about'} on:click={() => activeTab = 'about'}>
-          {$t('settings.about')}
+          <Icon name="info" size={14} strokeWidth={1.75} />
+          <span>{$t('settings.about')}</span>
         </button>
       </nav>
 
       <div class="settings-content" role="tabpanel">
         {#if activeTab === 'general'}
-          <div class="setting-row">
-            <label class="setting-label" for="theme-select">{$t('settings.theme')}</label>
-            <select id="theme-select" value={settings.theme} on:change={onThemeChange}>
-              <option value="dark">{$t('settings.theme_dark')}</option>
-              <option value="light">{$t('settings.theme_light')}</option>
-              <option value="system">{$t('settings.theme_system')}</option>
-            </select>
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_appearance')}</h4>
+            <div class="settings-card">
+              <div class="setting-row">
+                <label class="setting-label" for="theme-select">{$t('settings.theme')}</label>
+                <select id="theme-select" value={settings.theme} on:change={onThemeChange}>
+                  <option value="dark">{$t('settings.theme_dark')}</option>
+                  <option value="light">{$t('settings.theme_light')}</option>
+                  <option value="system">{$t('settings.theme_system')}</option>
+                </select>
+              </div>
+              <div class="card-divider"></div>
+              <div class="setting-row">
+                <label class="setting-label" for="lang-select">{$t('settings.language')}</label>
+                <select id="lang-select" value={settings.language} on:change={onLanguageChange}>
+                  <option value="auto">{$t('settings.lang_auto')}</option>
+                  <option value="en">English</option>
+                  <option value="ko">한국어</option>
+                  <option value="ja">日本語</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div class="setting-row">
-            <label class="setting-label" for="lang-select">{$t('settings.language')}</label>
-            <select id="lang-select" value={settings.language} on:change={onLanguageChange}>
-              <option value="auto">{$t('settings.lang_auto')}</option>
-              <option value="en">English</option>
-              <option value="ko">한국어</option>
-              <option value="ja">日本語</option>
-            </select>
-          </div>
-
-          <div class="setting-row">
-            <label class="setting-label" for="auto-start">{$t('settings.auto_start')}</label>
-            <label class="toggle">
-              <input id="auto-start" type="checkbox" checked={settings.auto_start} on:change={onAutoStartChange} />
-              <span class="toggle-track"></span>
-            </label>
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_startup')}</h4>
+            <div class="settings-card">
+              <div class="setting-row">
+                <label class="setting-label" for="auto-start">{$t('settings.auto_start')}</label>
+                <label class="toggle">
+                  <input id="auto-start" type="checkbox" checked={settings.auto_start} on:change={onAutoStartChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+            </div>
           </div>
 
         {:else if activeTab === 'advanced'}
-          <div class="setting-row">
-            <label class="setting-label" for="log-level">{$t('settings.log_level')}</label>
-            <select id="log-level" value={settings.log_level} on:change={onLogLevelChange}>
-              <option value="debug">{$t('settings.log_level_debug')}</option>
-              <option value="info">{$t('settings.log_level_info')}</option>
-              <option value="warn">{$t('settings.log_level_warn')}</option>
-              <option value="error">{$t('settings.log_level_error')}</option>
-            </select>
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_security')}</h4>
+            <div class="settings-card">
+              <div class="setting-row setting-row--toggle">
+                <div class="setting-info">
+                  <label class="setting-label" for="kill-switch">{$t('settings.kill_switch')}</label>
+                  <p class="setting-desc">{$t('settings.kill_switch_hint')}</p>
+                </div>
+                <label class="toggle">
+                  <input id="kill-switch" type="checkbox"
+                    checked={settings.kill_switch}
+                    on:change={onKillSwitchChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+              <div class="card-divider"></div>
+              <div class="setting-row setting-row--toggle">
+                <div class="setting-info">
+                  <label class="setting-label" for="dns-protection">{$t('settings.dns_protection')}</label>
+                  <p class="setting-desc">{$t('settings.dns_protection_hint')}</p>
+                </div>
+                <label class="toggle">
+                  <input id="dns-protection" type="checkbox"
+                    checked={settings.dns_protection}
+                    on:change={onDnsProtectionChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div class="setting-row setting-row--toggle">
-            <div class="setting-info">
-              <label class="setting-label" for="kill-switch">{$t('settings.kill_switch')}</label>
-              <p class="setting-desc">{$t('settings.kill_switch_hint')}</p>
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_connection')}</h4>
+            <div class="settings-card">
+              <div class="setting-row setting-row--toggle">
+                <div class="setting-info">
+                  <label class="setting-label" for="health-check">{$t('settings.health_check')}</label>
+                  <p class="setting-desc">{$t('settings.health_check_hint')}</p>
+                </div>
+                <label class="toggle">
+                  <input id="health-check" type="checkbox"
+                    checked={settings.health_check}
+                    on:change={onHealthCheckChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+              <div class="card-divider"></div>
+              <div class="setting-row setting-row--toggle">
+                <div class="setting-info">
+                  <label class="setting-label" for="pin-interface">{$t('settings.pin_interface')}</label>
+                  <p class="setting-desc">{$t('settings.pin_interface_hint')}</p>
+                </div>
+                <label class="toggle">
+                  <input id="pin-interface" type="checkbox"
+                    checked={settings.pin_interface}
+                    on:change={onPinInterfaceChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
             </div>
-            <label class="toggle">
-              <input id="kill-switch" type="checkbox"
-                checked={settings.kill_switch}
-                on:change={onKillSwitchChange} />
-              <span class="toggle-track"></span>
-            </label>
           </div>
 
-          <div class="setting-row setting-row--toggle">
-            <div class="setting-info">
-              <label class="setting-label" for="dns-protection">{$t('settings.dns_protection')}</label>
-              <p class="setting-desc">{$t('settings.dns_protection_hint')}</p>
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_logging')}</h4>
+            <div class="settings-card">
+              <div class="setting-row">
+                <label class="setting-label" for="log-level">{$t('settings.log_level')}</label>
+                <select id="log-level" value={settings.log_level} on:change={onLogLevelChange}>
+                  <option value="debug">{$t('settings.log_level_debug')}</option>
+                  <option value="info">{$t('settings.log_level_info')}</option>
+                  <option value="warn">{$t('settings.log_level_warn')}</option>
+                  <option value="error">{$t('settings.log_level_error')}</option>
+                </select>
+              </div>
             </div>
-            <label class="toggle">
-              <input id="dns-protection" type="checkbox"
-                checked={settings.dns_protection}
-                on:change={onDnsProtectionChange} />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-
-          <div class="setting-row setting-row--toggle">
-            <div class="setting-info">
-              <label class="setting-label" for="health-check">{$t('settings.health_check')}</label>
-              <p class="setting-desc">{$t('settings.health_check_hint')}</p>
-            </div>
-            <label class="toggle">
-              <input id="health-check" type="checkbox"
-                checked={settings.health_check}
-                on:change={onHealthCheckChange} />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-
-          <div class="setting-row setting-row--toggle">
-            <div class="setting-info">
-              <label class="setting-label" for="pin-interface">{$t('settings.pin_interface')}</label>
-              <p class="setting-desc">{$t('settings.pin_interface_hint')}</p>
-            </div>
-            <label class="toggle">
-              <input id="pin-interface" type="checkbox"
-                checked={settings.pin_interface}
-                on:change={onPinInterfaceChange} />
-              <span class="toggle-track"></span>
-            </label>
           </div>
 
         {:else if activeTab === 'wifi_rules'}
@@ -405,22 +435,19 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.35);
+    background: var(--overlay-bg, rgba(0,0,0,0.45));
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 200;
   }
-  @media (prefers-color-scheme: dark) {
-    .modal-backdrop { background: rgba(0,0,0,0.55); }
-  }
   .modal {
     background: var(--bg-primary);
     border: 0.5px solid var(--border);
-    border-radius: 10px;
-    padding: 20px 24px 12px;
-    width: 520px;
-    box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.08));
+    border-radius: var(--radius-lg, 12px);
+    padding: 20px 24px 16px;
+    width: 560px;
+    box-shadow: var(--shadow-lg);
   }
   h3 {
     margin: 0 0 16px;
@@ -433,63 +460,95 @@
   .settings-layout {
     display: flex;
     gap: 16px;
-    height: 320px;
+    min-height: 360px;
   }
 
-  /* Sidebar */
+  /* Sidebar — icon + label tabs, M3 active indicator */
   .settings-sidebar {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 100px;
+    width: 120px;
+    flex-shrink: 0;
     border-right: 0.5px solid var(--border);
     padding-right: 12px;
   }
   .settings-sidebar button {
     display: flex;
     align-items: center;
-    padding: 6px 8px;
+    gap: 7px;
+    padding: 7px 10px;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 6px);
     color: var(--text-secondary);
     font: 500 13px/18px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
     cursor: pointer;
     text-align: left;
-    min-height: 28px;
+    min-height: 32px;
+    width: 100%;
   }
   .settings-sidebar button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
   .settings-sidebar button.active {
-    background: var(--bg-selected, rgba(0,122,255,0.10));
-    color: var(--text-primary);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+    color: var(--accent);
     font-weight: 600;
   }
   .settings-sidebar button:focus,
   .settings-sidebar button:focus-visible {
     outline: none;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    .settings-sidebar button {
+      transition: background-color 120ms ease, color 120ms ease;
+    }
+  }
 
-  /* Content */
+  /* Content area */
   .settings-content {
     flex: 1;
     min-width: 0;
     overflow-y: auto;
+    padding-right: 2px;
   }
 
+  /* ---- Section + Card layout (M3 / iOS Settings style) ---- */
+  .settings-section {
+    margin-bottom: var(--space-4, 12px);
+  }
+  .section-title {
+    margin: 0 0 6px var(--space-1, 4px);
+    font: 500 10px/13px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .settings-card {
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+  }
+  .card-divider {
+    height: 0.5px;
+    background: var(--border);
+    margin: 0 12px;
+  }
+
+  /* Setting rows inside cards */
   .setting-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 5px 0;
-    min-height: 32px;
+    padding: 9px 12px;
     gap: var(--space-3);
   }
   .setting-row--toggle {
     align-items: flex-start;
-    padding: 8px 0;
+    padding: 10px 12px;
   }
   .setting-info {
     flex: 1;
@@ -502,19 +561,14 @@
     cursor: pointer;
   }
   .setting-desc {
-    margin: 2px 0 0;
+    margin: 3px 0 0;
     padding: 0;
     font: 400 11px/15px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
     color: var(--text-muted);
     letter-spacing: 0.01em;
   }
-  /* Legacy: keep bare `label` styled for selects (not wrapped in setting-info) */
-  label:not(.toggle):not(.setting-label) {
-    font: 400 13px/18px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
-    color: var(--text-primary);
-  }
 
-  /* ---- macOS-style toggle switch (34×20px, 200ms slide) ---- */
+  /* ---- Toggle switch (34×20px, 200ms slide) ---- */
   .toggle {
     position: relative;
     display: inline-block;

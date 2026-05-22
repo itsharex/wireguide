@@ -56,8 +56,15 @@
           class:connected={activeSet.has(tun.name)}
           on:click={() => select(tun)}
         >
-          <span class="status-dot" class:on={activeSet.has(tun.name) && tunnelHandshakes[tun.name]} class:warning={activeSet.has(tun.name) && !tunnelHandshakes[tun.name]}></span>
-          <span class="tunnel-name">{tun.name}</span>
+          <span class="status-dot"
+            class:on={activeSet.has(tun.name) && tunnelHandshakes[tun.name]}
+            class:warning={activeSet.has(tun.name) && !tunnelHandshakes[tun.name]}></span>
+          <div class="tunnel-text">
+            <span class="tunnel-name">{tun.name}</span>
+            {#if tun.endpoint}
+              <span class="tunnel-meta">{tun.endpoint}</span>
+            {/if}
+          </div>
         </button>
       {/each}
     {/if}
@@ -121,7 +128,7 @@
     box-shadow: 0 0 0 3px var(--blue-tint);
   }
 
-  /* --- List rows (36px — Fitts's Law: larger targets reduce error rate) --- */
+  /* --- List items: card-style with name + endpoint --- */
   .list-items {
     flex: 1;
     min-height: 0;
@@ -131,13 +138,14 @@
   .tunnel-item {
     display: flex;
     align-items: center;
+    gap: 10px;
     width: 100%;
-    height: 36px;
-    padding: 0 var(--space-2);
-    margin-bottom: 1px;
+    min-height: 52px;
+    padding: 8px 10px;
+    margin-bottom: 2px;
     background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
+    border: 0;
+    border-radius: 10px;
     color: var(--text-primary);
     font: var(--text-body);
     cursor: pointer;
@@ -147,7 +155,8 @@
   }
   @media (prefers-reduced-motion: no-preference) {
     .tunnel-item {
-      transition: background-color var(--dur-fast) var(--ease-out);
+      transition: background-color var(--dur-fast) var(--ease-out),
+                  border-color var(--dur-fast) var(--ease-out);
     }
     .status-dot {
       transition: background-color var(--dur-base) var(--ease-out),
@@ -158,13 +167,14 @@
     background: var(--bg-hover);
   }
   .tunnel-item.active {
-    background: var(--bg-selected);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
   .tunnel-item.active .tunnel-name {
     font-weight: 600;
+    color: var(--text-primary);
   }
 
-  /* Connected left-edge accent pill — inspired by Linear's active indicator */
+  /* Connected left-edge accent pill */
   .tunnel-item.connected::before {
     content: '';
     position: absolute;
@@ -172,24 +182,19 @@
     top: 50%;
     transform: translateY(-50%);
     width: 3px;
-    height: 18px;
+    height: 26px;
     background: var(--green);
     border-radius: 0 2px 2px 0;
   }
-  .tunnel-item.connected {
-    padding-left: calc(var(--space-2) + 3px);
-  }
 
-  /* --- Connection dot --- */
+  /* --- Connection dot (left of name) --- */
   .status-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: color-mix(in srgb, var(--text-muted) 50%, transparent);
-    margin-right: var(--space-2);
     flex-shrink: 0;
   }
-
   @keyframes dot-pulse {
     0%, 100% {
       box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent);
@@ -212,11 +217,29 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange, #FF9500) 25%, transparent);
   }
 
+  /* --- Tunnel text block: name on top, endpoint below --- */
+  .tunnel-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
   .tunnel-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: var(--text-body);
+    font: 500 13px/18px var(--font-sans);
+    color: var(--text-primary);
+    letter-spacing: -0.005em;
+  }
+  .tunnel-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 400 11px/14px var(--font-mono);
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
   }
 
   /* --- Empty state --- */
