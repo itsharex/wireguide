@@ -444,23 +444,31 @@
   .modal {
     background: var(--bg-primary);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-lg, 12px);
-    padding: 20px 24px 16px;
-    width: 560px;
+    border-radius: 14px;
+    padding: 20px 22px 14px;
+    width: 720px;
+    height: 520px;
+    display: flex;
+    flex-direction: column;
     box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    box-sizing: border-box;
   }
   h3 {
-    margin: 0 0 16px;
-    font: 600 15px/20px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
+    margin: 0 0 14px;
+    font: 700 16px/22px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
     color: var(--text-primary);
-    letter-spacing: -0.005em;
+    letter-spacing: -0.01em;
+    flex-shrink: 0;
   }
 
-  /* Split layout */
+  /* Split layout — fixed height with internal scroll */
   .settings-layout {
     display: flex;
     gap: 16px;
-    min-height: 360px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* Sidebar — icon + label tabs, M3 active indicator */
@@ -468,34 +476,46 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    width: 120px;
+    width: 152px;
     flex-shrink: 0;
     border-right: 0.5px solid var(--border);
     padding-right: 12px;
+    overflow-y: auto;
   }
   .settings-sidebar button {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 7px 10px;
+    gap: 9px;
+    padding: 8px 10px;
     background: none;
     border: none;
-    border-radius: var(--radius-sm, 6px);
+    border-radius: 8px;
     color: var(--text-secondary);
     font: 500 13px/18px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
     cursor: pointer;
     text-align: left;
-    min-height: 32px;
+    min-height: 34px;
     width: 100%;
+    letter-spacing: -0.005em;
+  }
+  .settings-sidebar button :global(.icon) {
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
   .settings-sidebar button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
+  .settings-sidebar button:hover :global(.icon) {
+    color: var(--text-primary);
+  }
   .settings-sidebar button.active {
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary));
     color: var(--accent);
-    font-weight: 600;
+    font-weight: 700;
+  }
+  .settings-sidebar button.active :global(.icon) {
+    color: var(--accent);
   }
   .settings-sidebar button:focus,
   .settings-sidebar button:focus-visible {
@@ -503,16 +523,27 @@
   }
   @media (prefers-reduced-motion: no-preference) {
     .settings-sidebar button {
-      transition: background-color 120ms ease, color 120ms ease;
+      transition: background-color 140ms ease, color 140ms ease;
     }
   }
 
-  /* Content area */
+  /* Content area — independent scroll */
   .settings-content {
     flex: 1;
     min-width: 0;
     overflow-y: auto;
-    padding-right: 2px;
+    padding-right: 4px;
+  }
+  .settings-content::-webkit-scrollbar { width: 8px; }
+  .settings-content::-webkit-scrollbar-track { background: transparent; }
+  .settings-content::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .settings-content::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-muted);
   }
 
   /* ---- Section + Card layout (M3 / iOS Settings style) ---- */
@@ -756,23 +787,41 @@
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    margin-top: 16px;
+    margin-top: 14px;
     padding-top: 12px;
     border-top: 0.5px solid var(--border);
+    flex-shrink: 0;
   }
   .btn-close {
-    min-width: 72px;
-    height: 28px;
-    padding: 0 16px;
-    background: var(--accent, #007AFF);
-    color: var(--text-inverse, #fff);
+    min-width: 84px;
+    height: 32px;
+    padding: 0 18px;
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    color: #fff;
     border: 0;
-    border-radius: 6px;
-    font: 500 13px/18px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
+    border-radius: 10px;
+    font: 600 13px/18px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
+    letter-spacing: -0.005em;
     cursor: pointer;
+    box-shadow:
+      0 3px 10px color-mix(in srgb, var(--accent) 28%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
   }
-  .btn-close:hover { filter: brightness(1.08); }
-  .btn-close:active { filter: brightness(0.94); }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn-close {
+      transition: filter 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+    }
+  }
+  .btn-close:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow:
+      0 5px 14px color-mix(in srgb, var(--accent) 36%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-close:active { filter: brightness(0.94); transform: translateY(0); }
   .btn-close:focus,
   .btn-close:focus-visible {
     outline: none;

@@ -816,10 +816,13 @@
   }
 
   /* ========== SIDEBAR — Material Design Navigation Drawer + Apple Settings hybrid ========== */
+  /* Subtle tonal shift from list pane: blends 7% of text color into the base.
+   * In dark mode this lifts the sidebar slightly (macOS translucent sidebar
+   * feel); in light mode it darkens slightly (Mac Finder sidebar feel). No
+   * hard divider line needed — the bg difference IS the hierarchy cue. */
   .sidebar {
-    width: 240px;
-    background: var(--bg-secondary);
-    border-right: 0.5px solid var(--border);
+    width: 200px;
+    background: color-mix(in srgb, var(--bg-secondary) 93%, var(--text-primary));
     display: flex;
     flex-direction: column;
     padding-top: 52px;
@@ -977,10 +980,9 @@
 
   .nav-spacer { flex: 1; }
 
-  /* Footer — consistent with main nav items, hairline divider above */
+  /* Footer — natural padding, no hard divider (whitespace separates) */
   .nav-footer {
-    padding: 8px;
-    border-top: 0.5px solid var(--border);
+    padding: 4px 8px 10px;
   }
 
   /* ---------- Main content ---------- */
@@ -1134,23 +1136,24 @@
   .modal {
     background: var(--bg-primary);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-    width: 440px;
+    border-radius: 14px;
+    padding: 22px 24px 18px;
+    width: 560px;
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: var(--shadow-lg);
   }
   .modal-editor {
-    width: 640px;
-    height: 520px;
+    width: 760px;
+    height: 500px;
     padding: 0;
     overflow: hidden;
     resize: both;
-    min-width: 480px;
-    min-height: 380px;
+    min-width: 520px;
+    min-height: 360px;
     max-width: calc(100vw - 40px);
     max-height: calc(100vh - 40px);
+    border-radius: 14px;
   }
   .modal-zip-result {
     max-width: 90vw;

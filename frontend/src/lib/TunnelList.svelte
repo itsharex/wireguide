@@ -34,11 +34,24 @@
 
 <div class="tunnel-list">
   <div class="list-header">
-    <h2>{$t('tunnel.list_title')}</h2>
+    <h2 class="list-title">{$t('tunnel.list_title')}</h2>
+    {#if ($tunnels || []).length > 0}
+      <span class="list-count">{($tunnels || []).length}</span>
+    {/if}
   </div>
 
-  <div class="search-box">
-    <input type="text" placeholder={$t('tunnel.search')} bind:value={search} />
+  <div class="search-wrap">
+    <span class="search-icon"><Icon name="search" size={13} strokeWidth={2} /></span>
+    <input
+      type="text"
+      class="search-input"
+      placeholder={$t('tunnel.search')}
+      bind:value={search} />
+    {#if search}
+      <button class="search-clear" on:click={() => search = ''} aria-label="Clear search">
+        <Icon name="x" size={11} strokeWidth={2.5} />
+      </button>
+    {/if}
   </div>
 
   <div class="list-items">
@@ -90,42 +103,92 @@
     background: var(--bg-secondary);
   }
 
-  /* --- Section header (uppercase caption style from HIG) --- */
+  /* --- Section header (title + count badge) --- */
   .list-header {
-    padding: var(--space-4) var(--space-4) var(--space-2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 10px;
+    gap: 8px;
   }
-  .list-header h2 {
+  .list-title {
     margin: 0;
-    font: 500 10px/13px var(--font-sans);
+    font: 700 10px/13px var(--font-sans);
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
+  }
+  .list-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 16px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+    color: var(--text-muted);
+    font: 700 10px/1 var(--font-sans);
   }
 
-  /* --- Search box (AppKit rounded text field) --- */
-  .search-box {
-    padding: 0 var(--space-3) var(--space-2);
+  /* --- Search input with icon + clear button --- */
+  .search-wrap {
+    position: relative;
+    padding: 0 12px 10px;
   }
-  .search-box input {
+  .search-icon {
+    position: absolute;
+    left: 21px;
+    top: 50%;
+    transform: translateY(calc(-50% - 5px));
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+  }
+  .search-input {
     width: 100%;
-    height: 24px;
-    padding: 0 var(--space-2);
-    background: var(--bg-input);
+    height: 30px;
+    padding: 0 30px 0 30px;
+    background: var(--bg-card);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 8px;
     color: var(--text-primary);
-    font: var(--text-body);
+    font: 13px/18px var(--font-sans);
     outline: none;
     box-sizing: border-box;
-    transition: border-color var(--dur-fast) var(--ease-out),
-                box-shadow var(--dur-fast) var(--ease-out);
   }
-  .search-box input::placeholder {
-    color: var(--text-muted);
+  @media (prefers-reduced-motion: no-preference) {
+    .search-input {
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
   }
-  .search-box input:focus {
+  .search-input::placeholder { color: var(--text-muted); }
+  .search-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--blue-tint);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    background: var(--bg-primary);
+  }
+  .search-clear {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(calc(-50% - 5px));
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .search-clear:hover {
+    background: color-mix(in srgb, var(--text-muted) 36%, transparent);
+    color: var(--text-primary);
   }
 
   /* --- List items: card-style with name + endpoint --- */
@@ -244,63 +307,80 @@
 
   /* --- Empty state --- */
   .empty-state {
-    padding: var(--space-8) var(--space-4);
+    padding: 48px 20px;
     text-align: center;
     color: var(--text-muted);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--space-2);
+    gap: 8px;
   }
   :global(.empty-icon) {
     opacity: 0.4;
-    margin-bottom: var(--space-1);
+    margin-bottom: 4px;
   }
   .empty-state p {
-    font: var(--text-body);
+    font: 500 13px/18px var(--font-sans);
+    margin: 0;
   }
   .empty-state .hint {
-    font: var(--text-footnote);
+    font: 11px/15px var(--font-sans);
+    color: var(--text-muted);
   }
 
-  /* --- Footer buttons --- */
+  /* --- Footer buttons (primary gradient + secondary card, no hard divider) --- */
   .list-footer {
-    padding: var(--space-3);
-    border-top: 0.5px solid var(--border);
+    padding: 8px 12px 14px;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: 8px;
   }
   .btn {
     width: 100%;
-    height: 28px;
-    padding: 0 var(--space-3);
+    height: 34px;
+    padding: 0 12px;
     border: 0;
-    border-radius: var(--radius-sm);
-    font: var(--text-headline);
+    border-radius: 10px;
+    font: 600 12px/16px var(--font-sans);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 6px;
+    letter-spacing: -0.005em;
   }
   @media (prefers-reduced-motion: no-preference) {
     .btn {
-      transition: background-color var(--dur-fast) var(--ease-out),
-                  filter var(--dur-fast) var(--ease-out);
+      transition: background-color 140ms ease, filter 140ms ease,
+                  border-color 140ms ease, transform 140ms ease,
+                  box-shadow 140ms ease;
     }
   }
   .btn-primary {
-    background: var(--accent);
-    color: var(--text-inverse);
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    color: #fff;
+    box-shadow:
+      0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
   }
-  .btn-primary:hover { filter: brightness(1.08); }
-  .btn-primary:active { filter: brightness(0.94); }
+  .btn-primary:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow:
+      0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-primary:active { filter: brightness(0.94); transform: translateY(0); }
   .btn-secondary {
     background: var(--bg-card);
     color: var(--text-primary);
     border: 0.5px solid var(--border);
   }
-  .btn-secondary:hover { background: var(--bg-hover); }
+  .btn-secondary:hover {
+    background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
   .btn-secondary:active { background: var(--bg-active); }
 </style>

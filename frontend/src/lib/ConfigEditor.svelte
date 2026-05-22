@@ -185,8 +185,8 @@ PersistentKeepalive = 25
       <span class="editor-title">{name || $t('editor.title', { name: '' })}</span>
     {/if}
     <div class="editor-actions">
-      <button class="btn btn-save" on:click={save}>{$t('editor.save')}</button>
-      <button class="btn btn-cancel" on:click={cancel}>{$t('editor.cancel')}</button>
+      <button class="editor-btn editor-btn-ghost" on:click={cancel}>{$t('editor.cancel')}</button>
+      <button class="editor-btn editor-btn-primary" on:click={save}>{$t('editor.save')}</button>
     </div>
   </div>
 
@@ -206,64 +206,118 @@ PersistentKeepalive = 25
     display: flex;
     flex-direction: column;
     height: 100%;
+    background: var(--bg-primary);
   }
   .editor-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 0.5px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
   }
   .editor-title {
-    font-size: 14px;
-    color: var(--text-secondary);
+    flex: 1;
+    font: 600 14px/18px var(--font-sans);
+    color: var(--text-primary);
+    letter-spacing: -0.005em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .name-input {
-    font-size: 14px;
-    font-weight: 600;
+    flex: 1;
+    height: 32px;
+    padding: 0 12px;
+    font: 600 14px/18px var(--font-sans);
+    letter-spacing: -0.005em;
     color: var(--text-primary);
     background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 8px;
-    min-width: 180px;
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    min-width: 0;
     outline: none;
+    box-sizing: border-box;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .name-input {
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
   }
   .name-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--blue-tint);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    background: var(--bg-primary);
   }
   .editor-actions {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
   }
   .editor-container {
     flex: 1;
     overflow: auto;
+    min-height: 0;
   }
   .editor-container :global(.cm-editor) {
     height: 100%;
   }
   .editor-errors {
-    padding: 8px 12px;
+    padding: 10px 16px;
     background: var(--error-bg);
-    border-top: 1px solid var(--red);
+    border-top: 0.5px solid var(--red);
+    flex-shrink: 0;
+    max-height: 100px;
+    overflow-y: auto;
   }
   .editor-errors p {
-    margin: 4px 0;
+    margin: 3px 0;
     color: var(--error-text);
-    font-size: 13px;
+    font: 12px/16px var(--font-sans);
   }
-  .btn {
-    padding: 6px 14px;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
+
+  /* Toolbar buttons — gradient primary + ghost cancel */
+  .editor-btn {
+    height: 32px;
+    min-width: 72px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 9px;
+    font: 600 13px/18px var(--font-sans);
+    letter-spacing: -0.005em;
     cursor: pointer;
     color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  .btn-save { background: var(--green); color: var(--text-inverse); }
-  .btn-save:hover { opacity: 0.9; }
-  .btn-cancel { background: var(--bg-card); border: 1px solid var(--border); }
-  .btn-cancel:hover { background: var(--bg-hover); }
+  @media (prefers-reduced-motion: no-preference) {
+    .editor-btn {
+      transition: filter 140ms ease, background-color 140ms ease,
+                  border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+    }
+  }
+  .editor-btn-primary {
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    color: #fff;
+    box-shadow:
+      0 3px 10px color-mix(in srgb, var(--accent) 28%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .editor-btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .editor-btn-primary:active { filter: brightness(0.94); transform: translateY(0); }
+
+  .editor-btn-ghost {
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+  }
+  .editor-btn-ghost:hover {
+    background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+  .editor-btn-ghost:active { background: var(--bg-active); }
 </style>

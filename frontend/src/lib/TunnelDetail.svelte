@@ -621,8 +621,16 @@
 {#if showWifiModal && $selectedTunnel}
   <div class="confirm-backdrop" on:click={closeWifiModal}>
     <div class="confirm-dialog wifi-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-label={$t('tunnel.wifi_auto_connect')}>
-      <h3>{$t('tunnel.wifi_auto_connect')} — {$selectedTunnel.name}</h3>
-      <p>{$t('tunnel.wifi_auto_connect_hint')}</p>
+      <div class="dialog-header">
+        <div class="dialog-icon-tile">
+          <Icon name="wifi" size={18} strokeWidth={2} />
+        </div>
+        <div class="dialog-header-text">
+          <h3>{$t('tunnel.wifi_auto_connect')}</h3>
+          <p class="dialog-sub">{$selectedTunnel.name}</p>
+        </div>
+      </div>
+      <p class="dialog-hint">{$t('tunnel.wifi_auto_connect_hint')}</p>
 
       <SSIDPermissionBanner {TunnelService} />
 
@@ -660,7 +668,7 @@
             </ul>
           {/if}
         </div>
-        <button class="btn btn-connect" on:click={addManualSsid} disabled={!newWifiSsid.trim()}>{$t('wifi_rules.add')}</button>
+        <button class="dialog-btn dialog-btn-primary" on:click={addManualSsid} disabled={!newWifiSsid.trim()}>{$t('wifi_rules.add')}</button>
       </div>
 
       <div class="wifi-list-block">
@@ -684,7 +692,7 @@
       </div>
 
       <div class="confirm-footer">
-        <button class="btn btn-secondary" on:click={closeWifiModal}>{$t('confirm.close')}</button>
+        <button class="dialog-btn dialog-btn-ghost" on:click={closeWifiModal}>{$t('confirm.close')}</button>
       </div>
     </div>
   </div>
@@ -693,11 +701,18 @@
 {#if showDeleteConfirm}
   <div class="confirm-backdrop" on:click={cancelDelete}>
     <div class="confirm-dialog" on:click|stopPropagation>
-      <h3>{$t('confirm.delete_title')}</h3>
-      <p>{$t('confirm.delete_message', { name: $selectedTunnel.name })}</p>
+      <div class="dialog-header">
+        <div class="dialog-icon-tile danger">
+          <Icon name="triangle-alert" size={18} strokeWidth={2} />
+        </div>
+        <div class="dialog-header-text">
+          <h3>{$t('confirm.delete_title')}</h3>
+        </div>
+      </div>
+      <p class="dialog-message">{$t('confirm.delete_message', { name: $selectedTunnel.name })}</p>
       <div class="confirm-footer">
-        <button class="btn btn-disconnect" bind:this={deleteConfirmBtn} on:click={confirmDelete}>{$t('confirm.yes')}</button>
-        <button class="btn btn-secondary" on:click={cancelDelete}>{$t('confirm.no')}</button>
+        <button class="dialog-btn dialog-btn-ghost" on:click={cancelDelete}>{$t('confirm.no')}</button>
+        <button class="dialog-btn dialog-btn-danger" bind:this={deleteConfirmBtn} on:click={confirmDelete}>{$t('confirm.yes')}</button>
       </div>
     </div>
   </div>
@@ -723,70 +738,36 @@
     line-height: 1;
   }
   .wifi-dialog {
-    width: 460px;
+    width: 640px;
     max-width: 90vw;
-    /* Let internal scroll regions handle overflow; the modal itself
-       must stay overflow:visible so the combobox dropdown can extend
-       past the dialog edge instead of being clipped. */
+    /* Let combobox dropdown extend past dialog edge */
     overflow: visible;
-  }
-  .wifi-warn {
-    font: var(--text-footnote);
-    color: var(--text-primary);
-    background: color-mix(in srgb, var(--accent-yellow, #FF9500) 12%, transparent);
-    border: 0.5px solid var(--accent-yellow, #FF9500);
-    border-radius: var(--radius-sm, 6px);
-    padding: var(--space-2) var(--space-3);
-    margin: 0 0 var(--space-4);
-  }
-  .wifi-section-title {
-    font: var(--text-footnote);
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin: var(--space-4) 0 var(--space-2);
   }
   .wifi-list-block {
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: 10px;
     background: var(--bg-card);
-    margin-top: var(--space-3);
-    margin-bottom: var(--space-3);
-    /* Fixed-height scroll region: the modal stays the same size no
-       matter how many networks the user adds. */
-    height: 200px;
-    /* Always-show the scrollbar track so row width never jumps when
-       the list grows past the visible area. (`scrollbar-gutter:
-       stable` is the modern equivalent but isn't reliably honored by
-       all WebKit builds Wails ships against — `scroll` works
-       everywhere.) */
+    margin-bottom: 12px;
+    height: 160px;
     overflow-y: scroll;
   }
-  /* Thin overlay-style scrollbar that matches native macOS list
-     scrollbars instead of the chunky default WebKit one. */
-  .wifi-list-block::-webkit-scrollbar {
-    width: 8px;
-  }
-  .wifi-list-block::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  .wifi-list-block::-webkit-scrollbar { width: 8px; }
+  .wifi-list-block::-webkit-scrollbar-track { background: transparent; }
   .wifi-list-block::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--text-muted) 50%, transparent);
+    background-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
-  .wifi-list-block::-webkit-scrollbar-thumb:hover {
-    background-color: var(--text-muted);
-  }
+  .wifi-list-block::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
   .wifi-empty-row {
-    /* Center vertically in the fixed-height block when there are no
-       networks yet, so the empty state doesn't look unbalanced. */
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
+    font: 11px/15px var(--font-sans);
+    color: var(--text-muted);
+    font-style: italic;
   }
   .wifi-list-rows {
     list-style: none;
@@ -796,43 +777,46 @@
   .wifi-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    gap: 8px;
+    padding: 9px 14px;
     border-bottom: 0.5px solid var(--border);
-    font: var(--text-body);
+    font: 13px/18px var(--font-sans);
     color: var(--text-primary);
-    min-height: 32px;
+    min-height: 36px;
   }
   .wifi-row:last-child { border-bottom: none; }
-  .wifi-row-name { flex: 1; }
+  .wifi-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wifi-row-remove {
-    background: none;
-    border: none;
+    background: transparent;
+    border: 0;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 13px;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     min-width: 24px;
     min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .wifi-row-remove:hover {
-    background: color-mix(in srgb, var(--accent-red, #FF3B30) 14%, transparent);
-    color: var(--accent-red, #FF3B30);
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    color: var(--red);
   }
   .wifi-current-badge {
-    font: var(--text-caption);
-    font-weight: 600;
-    color: var(--accent-green, #34C759);
-    padding: 1px 8px;
+    font: 700 10px/1 var(--font-sans);
+    color: var(--green);
+    padding: 3px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent-green, #34C759) 14%, transparent);
+    background: color-mix(in srgb, var(--green) 16%, transparent);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
   }
   .wifi-add-row {
     display: flex;
-    gap: var(--space-2);
-    align-items: center;
-    margin-bottom: var(--space-3);
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 12px;
   }
   .wifi-combo {
     flex: 1;
@@ -840,19 +824,23 @@
   }
   .wifi-combo input {
     width: 100%;
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
     color: var(--text-primary);
-    font: var(--text-body);
-    min-height: 28px;
+    font: 13px/18px var(--font-sans);
+    outline: none;
     box-sizing: border-box;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    .wifi-combo input { transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
+  }
   .wifi-combo input:focus-visible {
-    outline: 2px solid var(--accent-blue, #007AFF);
-    outline-offset: 0;
-    border-color: var(--accent-blue, #007AFF);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    background: var(--bg-primary);
   }
   .wifi-combo-dropdown {
     list-style: none;
@@ -862,30 +850,31 @@
     top: 100%;
     left: 0;
     right: 0;
-    background: var(--bg-primary);
+    background: var(--bg-card);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: 10px;
     box-shadow: var(--shadow-md);
-    max-height: 200px;
+    max-height: 220px;
     overflow-y: auto;
     z-index: 500;
   }
   .wifi-combo-option {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border-radius: 4px;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
     cursor: pointer;
     color: var(--text-primary);
-    font: var(--text-body);
-    min-height: 28px;
+    font: 13px/18px var(--font-sans);
+    min-height: 30px;
   }
   .wifi-combo-option:hover,
   .wifi-combo-option.focused {
-    background: color-mix(in srgb, var(--accent-blue, #007AFF) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
   }
-  .wifi-combo-name { flex: 1; }
+  .wifi-combo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ---------- Layout ---------- */
   .detail-panel {
@@ -1379,7 +1368,7 @@
     color: var(--red);
   }
 
-  /* ---------- Delete confirmation dialog ---------- */
+  /* ========== Modal dialog (Wi-Fi auto-connect + Delete confirm) ========== */
   .confirm-backdrop {
     position: fixed;
     inset: 0;
@@ -1392,24 +1381,127 @@
   .confirm-dialog {
     background: var(--bg-primary);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-    width: 380px;
-    box-shadow: var(--shadow-md);
+    border-radius: 14px;
+    padding: 22px 26px 18px;
+    width: 480px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Shared dialog header: icon tile + title + optional subtitle */
+  .dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .dialog-icon-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .dialog-icon-tile.danger {
+    background: color-mix(in srgb, var(--red) 16%, transparent);
+    color: var(--red);
+  }
+  .dialog-header-text {
+    flex: 1;
+    min-width: 0;
   }
   .confirm-dialog h3 {
-    margin: 0 0 var(--space-2);
+    margin: 0;
     color: var(--text-primary);
-    font: var(--text-title-3);
+    font: 700 15px/20px var(--font-sans);
+    letter-spacing: -0.01em;
   }
-  .confirm-dialog p {
-    margin: 0 0 var(--space-4);
+  .dialog-sub {
+    margin: 1px 0 0;
+    font: 500 12px/16px var(--font-sans);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dialog-hint {
+    margin: 0 0 14px;
+    font: 12px/17px var(--font-sans);
+    color: var(--text-muted);
+  }
+  .dialog-message {
+    margin: 0 0 18px;
+    font: 13px/19px var(--font-sans);
     color: var(--text-secondary);
-    font: var(--text-body);
   }
   .confirm-footer {
     display: flex;
-    gap: var(--space-2);
+    gap: 8px;
     justify-content: flex-end;
+    margin-top: 14px;
   }
+
+  /* Dialog buttons — 32px height, gradient primary / red danger / ghost cancel */
+  .dialog-btn {
+    height: 32px;
+    min-width: 76px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 9px;
+    font: 600 13px/18px var(--font-sans);
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: var(--text-primary);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .dialog-btn {
+      transition: filter 140ms ease, background-color 140ms ease,
+                  border-color 140ms ease, transform 140ms ease,
+                  box-shadow 140ms ease;
+    }
+  }
+  .dialog-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .dialog-btn-primary {
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    color: #fff;
+    box-shadow:
+      0 3px 10px color-mix(in srgb, var(--accent) 28%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .dialog-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+  .dialog-btn-primary:active:not(:disabled) { filter: brightness(0.94); transform: translateY(0); }
+
+  .dialog-btn-danger {
+    background: linear-gradient(135deg, var(--red) 0%,
+      color-mix(in srgb, var(--red) 75%, var(--orange, #FF9500)) 100%);
+    color: #fff;
+    box-shadow:
+      0 3px 10px color-mix(in srgb, var(--red) 26%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .dialog-btn-danger:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+  .dialog-btn-danger:active:not(:disabled) { filter: brightness(0.94); transform: translateY(0); }
+
+  .dialog-btn-ghost {
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    color: var(--text-primary);
+  }
+  .dialog-btn-ghost:hover { background: var(--bg-hover); }
+  .dialog-btn-ghost:active { background: var(--bg-active); }
 </style>

@@ -166,15 +166,16 @@
 <style>
   .wifi-rules { padding: 4px 2px; }
   .section-hint {
-    font: var(--text-footnote);
-    color: var(--text-secondary);
-    margin: 0 0 var(--space-3);
+    font: 11px/15px var(--font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    letter-spacing: 0.01em;
   }
   .add-row {
     display: flex;
-    gap: var(--space-2);
-    align-items: center;
-    margin-bottom: var(--space-3);
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 12px;
   }
   .combo {
     flex: 1;
@@ -182,19 +183,23 @@
   }
   .combo input {
     width: 100%;
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
     color: var(--text-primary);
-    font: var(--text-body);
-    min-height: 28px;
+    font: 13px/18px var(--font-sans);
+    outline: none;
     box-sizing: border-box;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    .combo input { transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
+  }
   .combo input:focus-visible {
-    outline: 2px solid var(--accent-blue, #007AFF);
-    outline-offset: 0;
-    border-color: var(--accent-blue, #007AFF);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    background: var(--bg-primary);
   }
   .combo-dropdown {
     list-style: none;
@@ -204,53 +209,68 @@
     top: 100%;
     left: 0;
     right: 0;
-    background: var(--bg-primary);
+    background: var(--bg-card);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: 10px;
     box-shadow: var(--shadow-md);
-    max-height: 200px;
+    max-height: 220px;
     overflow-y: auto;
     z-index: 500;
   }
   .combo-option {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border-radius: 4px;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
     cursor: pointer;
     color: var(--text-primary);
-    font: var(--text-body);
-    min-height: 28px;
+    font: 13px/18px var(--font-sans);
+    min-height: 30px;
   }
   .combo-option:hover,
   .combo-option.focused {
-    background: color-mix(in srgb, var(--accent-blue, #007AFF) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
   }
   .combo-name { flex: 1; }
   .add-row button {
-    padding: 0 var(--space-3);
-    min-height: 28px;
-    background: var(--accent, #007AFF);
-    border: none;
-    border-radius: var(--radius-sm, 6px);
+    padding: 0 16px;
+    height: 32px;
+    background: linear-gradient(135deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 75%, #a78bfa) 100%);
+    border: 0;
+    border-radius: 8px;
     color: #fff;
-    font: var(--text-body);
+    font: 600 13px/18px var(--font-sans);
+    letter-spacing: -0.005em;
     cursor: pointer;
     white-space: nowrap;
+    box-shadow:
+      0 3px 8px color-mix(in srgb, var(--accent) 28%, transparent),
+      inset 0 1px 0 rgba(255,255,255,0.15);
   }
-  .add-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  @media (prefers-reduced-motion: no-preference) {
+    .add-row button { transition: filter 140ms ease, transform 140ms ease, box-shadow 140ms ease; }
+  }
+  .add-row button:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+  .add-row button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
   .list-block {
     border: 0.5px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: 10px;
     background: var(--bg-card);
-    height: 160px;
+    height: 200px;
     overflow-y: scroll;
   }
   .list-block::-webkit-scrollbar { width: 8px; }
   .list-block::-webkit-scrollbar-track { background: transparent; }
   .list-block::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--text-muted) 50%, transparent);
+    background-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: content-box;
@@ -261,7 +281,7 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    font: var(--text-footnote);
+    font: 11px/15px var(--font-sans);
     color: var(--text-muted);
     font-style: italic;
   }
@@ -273,36 +293,37 @@
   .list-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    gap: 8px;
+    padding: 9px 14px;
     border-bottom: 0.5px solid var(--border);
-    font: var(--text-body);
+    font: 13px/18px var(--font-sans);
     color: var(--text-primary);
-    min-height: 32px;
+    min-height: 36px;
   }
   .list-row:last-child { border-bottom: none; }
-  .row-name { flex: 1; }
+  .row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row-remove {
-    background: none;
-    border: none;
+    background: transparent;
+    border: 0;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 13px;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     min-width: 24px;
     min-height: 24px;
   }
   .row-remove:hover {
-    background: color-mix(in srgb, var(--accent-red, #FF3B30) 14%, transparent);
-    color: var(--accent-red, #FF3B30);
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    color: var(--red);
   }
   .current-badge {
-    font: var(--text-caption);
-    font-weight: 600;
-    color: var(--accent-green, #34C759);
-    padding: 1px 8px;
+    font: 700 10px/1 var(--font-sans);
+    color: var(--green);
+    padding: 3px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent-green, #34C759) 14%, transparent);
+    background: color-mix(in srgb, var(--green) 16%, transparent);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
   }
 </style>
