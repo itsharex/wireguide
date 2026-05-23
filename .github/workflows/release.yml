@@ -132,8 +132,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        # Need the tag-pointed commit for the release-notes context;
-        # softprops/action-gh-release reads CHANGELOG.md if present.
+        with:
+          # git-cliff needs the full history + all tags to compute the
+          # commit range since the previous release. Shallow clone (the
+          # default) only fetches the tag's commit and CHANGELOG comes
+          # out empty.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -150,13 +154,26 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Generate release notes with git-cliff
+        # GitHub's built-in generate_release_notes only enumerates merged
+        # PRs — most of our work lands as direct pushes to main, so the
+        # auto-generated body was nearly empty (v0.3.0 shipped showing
+        # one bullet despite ~30 commits). git-cliff reads the actual
+        # git log, grouped by subject-line prefix per cliff.toml.
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: CHANGELOG.md
           fail_on_unmatched_files: true
 
   update-cask:
