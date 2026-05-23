@@ -346,6 +346,35 @@ func (m *WindowsManager) ResetDNSToSystemDefault() error {
 	return nil
 }
 
+// PreCloseAdapterCleanup deprioritizes the VPN adapter and clears its
+// DNS BEFORE the caller destroys the underlying TUN device. The wintun
+// adapter typically lingers for 1-2 seconds after WintunCloseAdapter
+// returns; during that window Windows still sees a metric-1 adapter
+// with DNS=<configured>, and faithfully forwards DNS queries through
+// it — to a tunnel that doesn't exist anymore. The fix: bump the
+// metric so Ethernet wins routing/DNS preference, and clear the DNS
+// so even a lingering metric-1 adapter has nothing to answer with.
+//
+// All three netsh calls are independent and fire in parallel; total
+// wall-clock is one cold-start (~200 ms). The DNS clear is the one
+// that tends to be slowest because Windows triggers DNS Client
+// notifications on the change — accepting that one-time cost beats
+// the alternative of "fast disconnect but DNS is wedged for 5
+// seconds afterwards".
+func (m *WindowsManager) PreCloseAdapterCleanup(ifaceName string) {
+	parallelTry(
+		func() {
+			tryRunWin("bump VPN iface metric v4", "netsh", "interface", "ip", "set", "interface", ifaceName, "metric=35")
+		},
+		func() {
+			tryRunWin("bump VPN iface metric v6", "netsh", "interface", "ipv6", "set", "interface", ifaceName, "metric=35")
+		},
+		func() {
+			tryRunWin("clear VPN iface DNS", "netsh", "interface", "ip", "set", "dns", ifaceName, "dhcp")
+		},
+	)
+}
+
 // RestoreDNS on Windows is now intentionally minimal — it only resets
 // the VPN adapter's own DNS to DHCP (cheap; usually a no-op because the
 // adapter is already gone by the time disconnect calls us). It does NOT
@@ -413,6 +442,14 @@ func (m *WindowsManager) Cleanup(ifaceName string) error {
 		})
 	}
 	parallelTry(thunks...)
+
+	// Flush the DNS resolver cache so any responses that came back via
+	// the tunnel before disconnect (now invalid because the tunnel's
+	// gone) are evicted. ipconfig /flushdns is just DnsFlushResolverCache
+	// under the hood but takes <50 ms — cheap insurance against the
+	// "VPN off → first DNS lookup returns a tunnel-era stale answer"
+	// class of bug.
+	tryRunWin("flush DNS cache", "ipconfig", "/flushdns")
 
 	m.bypassEndpoints = nil
 	m.origGatewayV6 = ""

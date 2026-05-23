@@ -68,6 +68,17 @@ type RoutingStateRestorer interface {
 	RestoreRoutingState(table, fwmark string)
 }
 
+// PreCloseCleaner is an optional interface for platform managers that need
+// to put the tunnel interface into a "harmless" state BEFORE the TUN
+// device is destroyed. On Windows the wintun adapter persists for several
+// seconds after WintunCloseAdapter returns, and during that window Windows
+// still treats it as a viable interface — using its metric-1 default to
+// route DNS queries through a tunnel that no longer exists. Lowering its
+// metric and clearing its DNS first makes that lingering adapter benign.
+type PreCloseCleaner interface {
+	PreCloseAdapterCleanup(ifaceName string)
+}
+
 // OriginalNetworkState captures the pre-tunnel network state for restoration.
 type OriginalNetworkState struct {
 	DNSServers []string `json:"dns_servers"`

@@ -240,6 +240,24 @@ func (m *Manager) disconnectPhases(cfg *domain.WireGuardConfig, engine *Engine, 
 		logStep("RemoveRoutes", ts)
 	}
 
+	// On Windows the wintun adapter doesn't actually disappear when
+	// engine.Close calls WintunCloseAdapter — it lingers for seconds
+	// (sometimes indefinitely on certain Win11 + competing-driver
+	// setups, e.g. with Tailscale also using wintun). During that
+	// window Windows still treats the adapter as a viable metric-1
+	// interface and forwards every DNS query through its now-dead
+	// 8.8.8.8 binding, which is what the user sees as "VPN off →
+	// internet permanently broken until I reconnect". Defang the
+	// lingering adapter by clearing its DNS and bumping its metric
+	// BEFORE we hand the close to wireguard-go.
+	if netMgr != nil {
+		if pc, ok := netMgr.(network.PreCloseCleaner); ok {
+			tsPre := time.Now()
+			pc.PreCloseAdapterCleanup(ifaceName)
+			logStep("PreCloseAdapterCleanup", tsPre)
+		}
+	}
+
 	// TUN
 	tsEngine := time.Now()
 	engine.Close()
