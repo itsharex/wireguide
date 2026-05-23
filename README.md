@@ -12,7 +12,7 @@
   <a href="https://github.com/korjwl1/wireguide/releases/latest"><img src="https://img.shields.io/github/v/release/korjwl1/wireguide?style=flat-square" alt="Release" /></a>
   <a href="https://github.com/korjwl1/wireguide/stargazers"><img src="https://img.shields.io/github/stars/korjwl1/wireguide?style=flat-square" alt="Stars" /></a>
   <a href="#install"><img src="https://img.shields.io/badge/homebrew-tap-blue?style=flat-square" alt="Homebrew" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" />
   <a href="LICENSE"><img src="https://img.shields.io/github/license/korjwl1/wireguide?style=flat-square" alt="License" /></a>
 </p>
 
@@ -63,6 +63,8 @@ Uses [wireguard-go](https://git.zx2c4.com/wireguard-go) (May 2025), 57 commits a
 
 ## Install
 
+Tested on **macOS 15+ (Apple Silicon)** and **Windows 11 (amd64)**.
+
 ### macOS (Homebrew) — recommended
 
 ```bash
@@ -75,6 +77,15 @@ brew install --cask wireguide
 Download from [Releases](https://github.com/korjwl1/wireguide/releases), unzip, move to `/Applications`.
 
 > If macOS shows "app is damaged", run: `xattr -cr /Applications/WireGuide.app`
+
+### Windows (Installer)
+
+Download the latest `WireGuide-windows-amd64.exe` (or `-arm64.exe`) installer from
+[Releases](https://github.com/korjwl1/wireguide/releases) and run it. The NSIS
+installer registers the helper service and shortcut.
+
+> Windows SmartScreen may warn that the publisher is unknown — the binary is
+> currently unsigned. Click "More info" → "Run anyway".
 
 ### Build from Source
 

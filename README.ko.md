@@ -12,7 +12,7 @@
   <a href="https://github.com/korjwl1/wireguide/releases/latest"><img src="https://img.shields.io/github/v/release/korjwl1/wireguide?style=flat-square" alt="Release" /></a>
   <a href="https://github.com/korjwl1/wireguide/stargazers"><img src="https://img.shields.io/github/stars/korjwl1/wireguide?style=flat-square" alt="Stars" /></a>
   <a href="#설치"><img src="https://img.shields.io/badge/homebrew-tap-blue?style=flat-square" alt="Homebrew" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" />
   <a href="LICENSE"><img src="https://img.shields.io/github/license/korjwl1/wireguide?style=flat-square" alt="License" /></a>
 </p>
 
@@ -63,6 +63,8 @@
 
 ## 설치
 
+**macOS 15+ (Apple Silicon)** 및 **Windows 11 (amd64)** 에서 테스트 완료.
+
 ### macOS (Homebrew) — 권장
 
 ```bash
@@ -75,6 +77,15 @@ brew install --cask wireguide
 [Releases](https://github.com/korjwl1/wireguide/releases)에서 다운로드 후 `/Applications`으로 이동.
 
 > macOS에서 "앱이 손상되었습니다" 경고가 뜨면: `xattr -cr /Applications/WireGuide.app`
+
+### Windows (설치 파일)
+
+[Releases](https://github.com/korjwl1/wireguide/releases)에서 `WireGuide-windows-amd64.exe`
+(또는 `-arm64.exe`) 설치 파일을 다운로드 후 실행. NSIS 인스톨러가 헬퍼 서비스와 단축 아이콘을
+등록합니다.
+
+> Windows SmartScreen에서 "확인되지 않은 게시자" 경고가 뜰 수 있습니다 — 현재 코드 서명이
+> 없습니다. "추가 정보" → "실행"을 클릭하세요.
 
 ### 소스에서 빌드
 
