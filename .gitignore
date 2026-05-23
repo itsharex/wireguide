@@ -37,6 +37,9 @@ build/darwin/Assets.car
 
 # Claude Code working files — plans and local settings are per-user, not
 # repo state.
-.claude/plans/
-.claude/settings.local.json
+.claude/
 .spec-mix/
+
+# Helper debugging artifacts (stderr captures from `task build DEV=true`
+# launches with WIREGUIDE_HELPER_STDERR=1). Repo-relative, throwaway.
+debug-logs/
