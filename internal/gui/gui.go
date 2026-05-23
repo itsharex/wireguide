@@ -62,6 +62,12 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	// Settings changes can reach us without an import cycle.
 	wgapp.SetGUILogLevelSetter(setGUILogLevel)
 
+	// Pre-render the Windows tray icon variants now that main.go has
+	// populated customTrayIconPNG via SetTrayIconPNG. macOS uses the
+	// template path built in tray.go's init(); the Windows builder
+	// needs the embedded app icon, which init() can't see.
+	buildWindowsTrayIcons()
+
 	// 1. Local storage
 	paths, err := storage.GetPaths()
 	if err != nil {
@@ -205,6 +211,13 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 		tray.SetIcon(trayOffIcon)
 	} else {
 		tray.SetLabel("WireGuide")
+		// Windows also needs an explicit SetIcon at init or Wails falls
+		// back to the embedded white-W template — setIconState only
+		// runs on connect/disconnect transitions, so a fresh launch
+		// with no tunnel previously never showed our rounded icon.
+		if runtime.GOOS == "windows" && len(trayOffIconWindows) > 0 {
+			tray.SetIcon(trayOffIconWindows)
+		}
 	}
 	tray.SetTooltip("WireGuide")
 

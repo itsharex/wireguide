@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/png"
 	"log/slog"
+	"math"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	wgapp "github.com/korjwl1/wireguide/internal/app"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/icons"
+	"golang.org/x/image/draw"
 )
 
 // Tray icon variants. We always use SetIcon (non-template) to avoid a
@@ -30,12 +32,167 @@ import (
 var (
 	trayOnIcon  []byte // white W + green dot
 	trayOffIcon []byte // white W, no dot
+
+	// Windows-only variants rendered from the full app icon (rounded
+	// red tile + white W) so the system tray actually shows something
+	// visible against light tray backgrounds. macOS keeps the
+	// monochrome template above because the menu bar tints icons.
+	trayOnIconWindows  []byte // app icon + green dot badge
+	trayOffIconWindows []byte // app icon, no badge
+
+	// customTrayIconPNG is the source the Windows builders read from. Set
+	// by SetTrayIconPNG before gui.Run; init can't read it because Go
+	// runs package init() at load time, well before main wires this up.
+	customTrayIconPNG []byte
 )
+
+// SetTrayIconPNG hands the GUI package the raw bytes of the source app
+// icon (a 1024×1024 RGBA PNG today). main.go embeds the file and calls
+// this before invoking Run. The package keeps a copy so the Windows
+// tray-icon builders can read it later. Calling with an empty slice
+// disables the custom Windows tray icon (we fall back to the template).
+func SetTrayIconPNG(b []byte) { customTrayIconPNG = b }
 
 func init() {
 	white := color.NRGBA{255, 255, 255, 255}
 	trayOnIcon = buildTrayOnIcon(white)
 	trayOffIcon = buildTrayOffIcon(white)
+}
+
+// buildWindowsTrayIcons renders the rounded-red app icon at tray size
+// for Windows, optionally with a green dot badge for the "connected"
+// state. Called once from gui.Run after SetTrayIconPNG has populated
+// the source bytes. Safe to call with an unset source — leaves the
+// Windows variants nil and setIconState falls back to its existing
+// macOS template path.
+//
+// We render at 32×32: Windows tray DPI scales icons to fit, and 32 is
+// the next sane size up from 16 with enough room for anti-aliasing on
+// the rounded corners and the W glyph. The source is downsampled with
+// CatmullRom (high-quality bicubic) so the W stays crisp.
+func buildWindowsTrayIcons() {
+	if len(customTrayIconPNG) == 0 {
+		return
+	}
+	src, err := png.Decode(bytes.NewReader(customTrayIconPNG))
+	if err != nil {
+		slog.Warn("tray: decode appicon for Windows tray failed", "error", err)
+		return
+	}
+
+	const trayPx = 32
+	// Corner radius chosen to mirror the inner red tile's curve so the
+	// rounded outer silhouette and the inner red rounded square sit
+	// concentric — that's the "일체감" (unified feel) the user asked for
+	// instead of a hard white square framing the red tile.
+	const trayCornerRadius = 7
+	render := func(withBadge bool) []byte {
+		dst := image.NewNRGBA(image.Rect(0, 0, trayPx, trayPx))
+		draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+		// Force-round the outer silhouette. Wails on Windows passes the
+		// PNG straight to CreateIconFromResourceEx, which honours alpha,
+		// so zeroing the alpha outside the rounded rect guarantees the
+		// tray draws a rounded shape — independent of whether the
+		// resized appicon happened to leave a few white-ish pixels in
+		// the corners from CatmullRom's bleed at the tile edge.
+		applyRoundedCorners(dst, trayCornerRadius)
+		if withBadge {
+			drawGreenBadge(dst)
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, dst); err != nil {
+			slog.Warn("tray: encode Windows tray icon failed", "error", err)
+			return nil
+		}
+		return buf.Bytes()
+	}
+
+	trayOffIconWindows = render(false)
+	trayOnIconWindows = render(true)
+}
+
+// applyRoundedCorners zeros the alpha of pixels that lie outside a
+// centered rounded rectangle of the given corner radius. A 1-pixel ring
+// at the boundary is set to a fractional alpha proportional to its
+// distance from the corner centre so the rounded edge is anti-aliased
+// instead of stair-stepped.
+//
+// This runs AFTER the appicon is composited and is the last step before
+// PNG encode — anything we want to keep visible must already be drawn.
+func applyRoundedCorners(img *image.NRGBA, radius int) {
+	if radius <= 0 {
+		return
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			// Identify which corner's circle this pixel belongs to.
+			// The "straight edge" interior of the rounded rect needs no
+			// mutation — bail early so the inner pixels are untouched.
+			var cx, cy int
+			switch {
+			case x < radius && y < radius:
+				cx, cy = radius, radius
+			case x >= w-radius && y < radius:
+				cx, cy = w-1-radius, radius
+			case x < radius && y >= h-radius:
+				cx, cy = radius, h-1-radius
+			case x >= w-radius && y >= h-radius:
+				cx, cy = w-1-radius, h-1-radius
+			default:
+				continue
+			}
+			dx, dy := float64(x-cx), float64(y-cy)
+			d := math.Sqrt(dx*dx + dy*dy)
+			r := float64(radius)
+			switch {
+			case d > r:
+				img.SetNRGBA(x, y, color.NRGBA{})
+			case d > r-1:
+				// Anti-aliased edge: fade alpha from full at d=r-1 to
+				// zero at d=r. Multiply by existing alpha so the
+				// underlying icon's own translucency is preserved.
+				c := img.NRGBAAt(x, y)
+				c.A = uint8(float64(c.A) * (r - d))
+				img.SetNRGBA(x, y, c)
+			}
+		}
+	}
+}
+
+// drawGreenBadge paints a small green disc in the bottom-left corner of
+// img, matching the macOS "connected" badge position. Anti-aliasing is
+// a 1-pixel ring at the disc boundary so the badge doesn't look jagged
+// at 32×32.
+func drawGreenBadge(img *image.NRGBA) {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	// Badge geometry: 7px radius disc, centered ~6px from each edge.
+	r := h / 5
+	if r < 4 {
+		r = 4
+	}
+	cx, cy := r+1, h-r-1
+	green := color.NRGBA{52, 199, 89, 255} // macOS systemGreen
+	for y := cy - r - 1; y <= cy+r+1; y++ {
+		for x := cx - r - 1; x <= cx+r+1; x++ {
+			if x < 0 || y < 0 || x >= w || y >= h {
+				continue
+			}
+			dx, dy := x-cx, y-cy
+			d2 := dx*dx + dy*dy
+			r2 := r * r
+			switch {
+			case d2 <= r2:
+				img.SetNRGBA(x, y, green)
+			case d2 <= (r+1)*(r+1):
+				// 1-pixel AA ring: blend by alpha proportional to
+				// how far past the disc edge the pixel sits.
+				img.SetNRGBA(x, y, color.NRGBA{green.R, green.G, green.B, 128})
+			}
+		}
+	}
 }
 
 // buildTrayOnIcon composites a W glyph (in wColor) with a green dot badge at
@@ -273,13 +430,24 @@ func (t *trayManager) setIconState(activeNames []string, handshakeMap map[string
 	}
 
 	if activeChanged {
+		onIcon, offIcon := trayOnIcon, trayOffIcon
+		if runtime.GOOS == "windows" && len(trayOnIconWindows) > 0 {
+			// Use the rounded-red app-icon variants on Windows so the
+			// tray icon actually stands out against a light system-tray
+			// background and isn't framed by a white square.
+			onIcon, offIcon = trayOnIconWindows, trayOffIconWindows
+		}
 		if anyConnected {
-			t.tray.SetIcon(trayOnIcon)
+			t.tray.SetIcon(onIcon)
 			tooltip := "WireGuide — " + strings.Join(activeNames, ", ")
 			t.tray.SetTooltip(tooltip)
 		} else {
-			if runtime.GOOS == "darwin" {
-				t.tray.SetIcon(trayOffIcon)
+			// macOS keeps the off-state white-W template (looks correct
+			// under menu-bar vibrancy); Windows now also gets a real
+			// icon for the disconnected state instead of an unset
+			// placeholder.
+			if runtime.GOOS == "darwin" || (runtime.GOOS == "windows" && len(offIcon) > 0) {
+				t.tray.SetIcon(offIcon)
 			}
 			t.tray.SetTooltip("WireGuide")
 		}

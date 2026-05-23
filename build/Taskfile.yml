@@ -102,11 +102,21 @@ tasks:
     dir: build
     sources:
       - "appicon.png"
+      - "tools/genicon/main.go"
     generates:
       - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
+      # wails3 still owns the macOS .icns — its multi-resolution Asset
+      # output there is exactly what we want for the Dock and Finder.
       - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
+      # Re-generate windows/icon.ico ourselves with rounded-corner alpha
+      # baked into every embedded size (16 → 256). wails3's stock output
+      # only ships 256+128 PNGs; Windows then downscales for the taskbar
+      # and on some render paths flattens the transparent corners to the
+      # tray bg colour, which is the "white square around the rounded
+      # red tile" the user reported.
+      - go run ./tools/genicon -in appicon.png -out windows/icon.ico
 
   dev:frontend:
     summary: Runs the frontend in development mode

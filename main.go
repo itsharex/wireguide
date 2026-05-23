@@ -24,6 +24,17 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// trayIconBytes is the source PNG we hand to the GUI for the system-tray
+// icon. macOS keeps using the white-W template (the existing buildTrayOn/
+// OffIcon path), but on Windows the white-on-transparent template
+// disappeared against light system-tray backgrounds and Wails composited
+// the full app icon's transparent corners onto a white square. Sending
+// the rounded red app icon directly — pre-resized with alpha intact —
+// gives the menu-bar look the user expected.
+//
+//go:embed build/appicon.png
+var trayIconBytes []byte
+
 func main() {
 	helperMode := flag.Bool("helper", false, "run as privileged helper")
 	socketPath := flag.String("socket", "", "socket path for IPC")
@@ -75,6 +86,7 @@ func main() {
 	}
 
 	// GUI mode
+	gui.SetTrayIconPNG(trayIconBytes)
 	if err := gui.Run(application.AssetFileServerFS(assets), systemDataDir()); err != nil {
 		log.Fatal(err)
 	}
