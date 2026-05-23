@@ -14,20 +14,13 @@ permissions:
 
 jobs:
   build-macos:
-    name: macOS ${{ matrix.arch }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macos-latest is Apple Silicon; macos-13 is the last Intel
-          # runner GitHub still hosts. Building each arch on its native
-          # host avoids the CGO-cross-compile fiddliness (the .m files
-          # in internal/wifi want a host-toolchain SDK match).
-          - arch: arm64
-            runner: macos-latest
-          - arch: amd64
-            runner: macos-13
-    runs-on: ${{ matrix.runner }}
+    name: macOS arm64
+    # arm64 only. Intel macs are a vanishing share of the target
+    # audience and shipping a CGO/.m cross-compile from arm64 (or
+    # standing up a parallel macos-13 runner) costs more in CI
+    # complexity than it returns in coverage. Intel users can still
+    # build from source.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +40,8 @@ jobs:
 
       - name: Build .app bundle (ad-hoc signed)
         # darwin:package does: build:native → create:app:bundle →
-        # codesign:adhoc. ARCH selects the GOARCH on the inner go build.
-        run: wails3 task darwin:package ARCH=${{ matrix.arch }}
+        # codesign:adhoc.
+        run: wails3 task darwin:package ARCH=arm64
 
       - name: Archive .app
         # ditto preserves macOS metadata (extended attributes, symlinks,
@@ -56,12 +49,12 @@ jobs:
         # resulting .zip stays Gatekeeper-quarantine-friendly.
         run: |
           cd bin
-          ditto -c -k --sequesterRsrc --keepParent wireguide.app "WireGuide-darwin-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent wireguide.app "WireGuide-darwin-arm64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
-          path: bin/WireGuide-darwin-${{ matrix.arch }}.zip
+          name: macos-arm64
+          path: bin/WireGuide-darwin-arm64.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -152,3 +145,127 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  update-cask:
+    name: Update homebrew-tap cask (arm64)
+    needs: release
+    # Skip on pre-release tags (vX.Y.Z-rc1, etc.) — those shouldn't bump
+    # the stable cask. Skip if TAP_PUSH_TOKEN isn't configured so a fork
+    # without a homebrew-tap secret doesn't fail the whole pipeline.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check token is present
+        id: check_token
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          if [ -z "$TAP_PUSH_TOKEN" ]; then
+            echo "TAP_PUSH_TOKEN secret not set; skipping cask update."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout homebrew-tap
+        if: steps.check_token.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: korjwl1/homebrew-tap
+          token: ${{ secrets.TAP_PUSH_TOKEN }}
+          path: tap
+
+      - name: Download arm64 artifact
+        if: steps.check_token.outputs.skip == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64
+          path: dl
+
+      - name: Compute sha256 + rewrite cask
+        if: steps.check_token.outputs.skip == 'false'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          # Strip the leading 'v' from vX.Y.Z so the cask `version` line
+          # matches Homebrew convention.
+          version="${TAG#v}"
+          sha256=$(sha256sum dl/WireGuide-darwin-arm64.zip | awk '{print $1}')
+          cask="tap/Casks/wireguide.rb"
+
+          # Heredoc-rewrite the whole cask in one shot. Doing it via sed
+          # against the old file would chain three fragile regex edits
+          # (version line, sha256 line, url filename — the old file says
+          # "macOS-arm64", we want "darwin-arm64"). Easier and safer to
+          # just regenerate the bits that change. Everything *outside*
+          # the version/sha256/url block stays byte-identical.
+          cat > "$cask" <<EOF
+          cask "wireguide" do
+            version "$version"
+            sha256 "$sha256"
+
+            url "https://github.com/korjwl1/wireguide/releases/download/v#{version}/WireGuide-darwin-arm64.zip"
+            name "WireGuide"
+            desc "Cross-platform WireGuard VPN desktop client"
+            homepage "https://github.com/korjwl1/wireguide"
+
+            depends_on macos: ">= :catalina"
+
+            app "WireGuide.app"
+
+            # auto_updates true tells \`brew upgrade\` to defer to the
+            # app's own update mechanism, which prevents brew + the
+            # in-app scheduler from racing to upgrade the same install
+            # (the wireguide RunUpdate path also shells out to brew, so
+            # without this flag a user clicking "Update Now" while brew
+            # is auto-upgrading hits a lock contention).
+            auto_updates true
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-dr", "com.apple.quarantine", "#{appdir}/WireGuide.app"]
+              system_command "/usr/bin/killall",
+                             args: ["wireguide"],
+                             must_succeed: false
+              system_command "/bin/sleep",
+                             args: ["1"],
+                             must_succeed: false
+              system_command "/usr/bin/open",
+                             args: ["#{appdir}/WireGuide.app"],
+                             must_succeed: false
+            end
+
+            uninstall quit: "com.korjwl1.wireguide"
+
+            zap launchctl: "com.wireguide.helper",
+                delete: [
+                  "/Library/PrivilegedHelperTools/com.wireguide.helper",
+                  "/Library/LaunchDaemons/com.wireguide.helper.plist",
+                ],
+                trash: [
+                  "~/Library/Application Support/WireGuide",
+                  "~/Library/Preferences/com.korjwl1.wireguide.plist",
+                  "/var/run/wireguide",
+                  "/var/log/wireguide-helper.log",
+                ]
+          end
+          EOF
+
+      - name: Commit + push
+        if: steps.check_token.outputs.skip == 'false'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Detect a no-op (rerun of the same tag) so the workflow
+          # doesn't fail trying to push an empty diff.
+          if git diff --quiet Casks/wireguide.rb; then
+            echo "cask already up to date for ${TAG}; nothing to commit."
+            exit 0
+          fi
+          git add Casks/wireguide.rb
+          git commit -m "wireguide ${TAG}: arm64 cask bump"
+          git push
