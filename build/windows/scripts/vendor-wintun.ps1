@@ -19,12 +19,29 @@ $tmpDir  = Join-Path $env:TEMP ("wintun-extract-" + [guid]::NewGuid())
 Write-Host "Downloading $url"
 Invoke-WebRequest -Uri $url -OutFile $tmpZip
 
-$actual = (Get-FileHash -Algorithm SHA256 $tmpZip).Hash.ToLower()
+# .NET APIs instead of Get-FileHash / Expand-Archive cmdlets. GitHub
+# Actions Windows runners enforce an AppLocker policy that blocks
+# several Microsoft.PowerShell.Utility / Microsoft.PowerShell.Archive
+# cmdlets with CommandNotFoundException — Get-FileHash was the first
+# casualty here. System.Security.Cryptography.SHA256 and
+# System.IO.Compression.ZipFile are first-party .NET types that aren't
+# subject to the same restrictions.
+$stream = [System.IO.File]::OpenRead($tmpZip)
+try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $hashBytes = $sha.ComputeHash($stream)
+    $actual = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').ToLower()
+} finally {
+    $stream.Dispose()
+}
 if ($actual -ne $expect) {
     throw "wintun.zip SHA256 mismatch. expected=$expect actual=$actual"
 }
 
-Expand-Archive -Force -Path $tmpZip -DestinationPath $tmpDir
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+[System.IO.Compression.ZipFile]::ExtractToDirectory($tmpZip, $tmpDir)
 $src = Join-Path $tmpDir "wintun\bin\$dllArch\wintun.dll"
 if (-not (Test-Path $src)) {
     throw "wintun.dll not found at $src (unknown arch: $dllArch)"
