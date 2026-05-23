@@ -35,32 +35,6 @@
 
 ---
 
-## 기능
-
-| 기능 | 설명 |
-|------|------|
-| **Wi-Fi 자동연결** | 터널별 SSID 규칙: 네트워크 진입 시 자동연결, 이탈 시 자동해제, 신뢰 네트워크 지원. GUI 종료 시에도 헬퍼에서 독립 동작. |
-| **멀티 터널** | 여러 WireGuard 터널을 동시에 연결하고 터널별 독립 상태 관리 |
-| **터널 관리** | `.conf` 파일 가져오기, 생성, 편집, 내보내기. 드래그 앤 드롭 지원. |
-| **설정 에디터** | CodeMirror 6 기반 WireGuard 문법 강조 및 자동완성 |
-| **시스템 트레이** | 연결 상태 뱃지, 1클릭 연결/해제 |
-| **킬 스위치** | VPN 외 모든 트래픽 차단 — macOS `pf`, Linux `nftables`, Windows WFP (선택) |
-| **DNS 보호** | DNS 쿼리를 VPN 터널로만 강제 (선택) |
-| **헬스 체크** | 핸드셰이크 상태 모니터링 및 자동 재연결 (선택) |
-| **슬립/웨이크 복구** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows 전원 알림 |
-| **라우트 모니터** | 게이트웨이 변경 시 엔드포인트 바이패스 라우트 재적용 — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
-| **인터페이스 고정** | WiFi + 이더넷 동시 연결 시 지연 스파이크 방지 |
-| **충돌 감지** | Tailscale 등 다른 WG 인터페이스와의 라우트 충돌 경고 |
-| **진단 도구** | DNS 유출 검사, 라우트 테이블 시각화 |
-| **자동 업데이트** | GitHub Releases 확인; `brew upgrade` 및 직접 설치 지원 |
-| **속도 대시보드** | 실시간 RX/TX 그래프 |
-| **다국어** | 영어, 한국어, 일본어 |
-| **테마** | 다크 / 라이트 / 시스템 자동 |
-
-[wireguard-go](https://git.zx2c4.com/wireguard-go) 2025년 5월 빌드 사용 (공식 앱 대비 57커밋 앞섬).
-
----
-
 ## 설치
 
 **macOS 15+ (Apple Silicon)** 및 **Windows 11 (amd64)** 에서 테스트 완료.
@@ -97,6 +71,32 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 task build
 ./bin/wireguide
 ```
+
+---
+
+## 기능
+
+| 기능 | 설명 |
+|------|------|
+| **Wi-Fi 자동연결** | 터널별 SSID 규칙: 네트워크 진입 시 자동연결, 이탈 시 자동해제, 신뢰 네트워크 지원. GUI 종료 시에도 헬퍼에서 독립 동작. |
+| **멀티 터널** | 여러 WireGuard 터널을 동시에 연결하고 터널별 독립 상태 관리 |
+| **터널 관리** | `.conf` 파일 가져오기, 생성, 편집, 내보내기. 드래그 앤 드롭 지원. |
+| **설정 에디터** | CodeMirror 6 기반 WireGuard 문법 강조 및 자동완성 |
+| **시스템 트레이** | 연결 상태 뱃지, 1클릭 연결/해제 |
+| **킬 스위치** | VPN 외 모든 트래픽 차단 — macOS `pf`, Linux `nftables`, Windows WFP (선택) |
+| **DNS 보호** | DNS 쿼리를 VPN 터널로만 강제 (선택) |
+| **헬스 체크** | 핸드셰이크 상태 모니터링 및 자동 재연결 (선택) |
+| **슬립/웨이크 복구** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows 전원 알림 |
+| **라우트 모니터** | 게이트웨이 변경 시 엔드포인트 바이패스 라우트 재적용 — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
+| **인터페이스 고정** | WiFi + 이더넷 동시 연결 시 지연 스파이크 방지 |
+| **충돌 감지** | Tailscale 등 다른 WG 인터페이스와의 라우트 충돌 경고 |
+| **진단 도구** | DNS 유출 검사, 라우트 테이블 시각화 |
+| **자동 업데이트** | GitHub Releases 확인; `brew upgrade` 및 직접 설치 지원 |
+| **속도 대시보드** | 실시간 RX/TX 그래프 |
+| **다국어** | 영어, 한국어, 일본어 |
+| **테마** | 다크 / 라이트 / 시스템 자동 |
+
+[wireguard-go](https://git.zx2c4.com/wireguard-go) 2025년 5월 빌드 사용 (공식 앱 대비 57커밋 앞섬).
 
 ---
 

@@ -35,32 +35,6 @@
 
 ---
 
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Wi-Fi Auto-Connect** | Per-tunnel SSID rules: auto-connect on join, auto-disconnect on leave, trusted networks. Runs in the helper — works even when the GUI is closed. |
-| **Multi-Tunnel** | Connect multiple WireGuard tunnels simultaneously with per-tunnel state |
-| **Tunnel Management** | Import, create, edit, export `.conf` files. Drag-and-drop import. |
-| **Config Editor** | CodeMirror 6 with WireGuard syntax highlighting and autocompletion |
-| **System Tray** | Connection status badge, 1-click connect/disconnect |
-| **Kill Switch** | Blocks all non-VPN traffic — macOS `pf`, Linux `nftables`, Windows WFP (optional) |
-| **DNS Protection** | Forces DNS queries through the VPN tunnel only (optional) |
-| **Health Check** | Handshake age monitoring with auto-reconnect (optional) |
-| **Sleep/Wake Recovery** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows power notifications |
-| **Route Monitor** | Re-applies endpoint bypass routes on gateway changes — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
-| **Pin Interface** | Prevents latency spikes on dual-network (WiFi + Ethernet) setups |
-| **Conflict Detection** | Warns about route conflicts with Tailscale, other WG interfaces, etc. |
-| **Diagnostics** | DNS leak test, route table visualization |
-| **Auto-Update** | Checks GitHub Releases; supports `brew upgrade` and direct install |
-| **Speed Dashboard** | Real-time RX/TX graph |
-| **i18n** | English, Korean, Japanese |
-| **Dark / Light / System** | Follows OS appearance |
-
-Uses [wireguard-go](https://git.zx2c4.com/wireguard-go) (May 2025), 57 commits ahead of the official macOS app's engine.
-
----
-
 ## Install
 
 Tested on **macOS 15+ (Apple Silicon)** and **Windows 11 (amd64)**.
@@ -97,6 +71,32 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 task build
 ./bin/wireguide
 ```
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Wi-Fi Auto-Connect** | Per-tunnel SSID rules: auto-connect on join, auto-disconnect on leave, trusted networks. Runs in the helper — works even when the GUI is closed. |
+| **Multi-Tunnel** | Connect multiple WireGuard tunnels simultaneously with per-tunnel state |
+| **Tunnel Management** | Import, create, edit, export `.conf` files. Drag-and-drop import. |
+| **Config Editor** | CodeMirror 6 with WireGuard syntax highlighting and autocompletion |
+| **System Tray** | Connection status badge, 1-click connect/disconnect |
+| **Kill Switch** | Blocks all non-VPN traffic — macOS `pf`, Linux `nftables`, Windows WFP (optional) |
+| **DNS Protection** | Forces DNS queries through the VPN tunnel only (optional) |
+| **Health Check** | Handshake age monitoring with auto-reconnect (optional) |
+| **Sleep/Wake Recovery** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows power notifications |
+| **Route Monitor** | Re-applies endpoint bypass routes on gateway changes — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
+| **Pin Interface** | Prevents latency spikes on dual-network (WiFi + Ethernet) setups |
+| **Conflict Detection** | Warns about route conflicts with Tailscale, other WG interfaces, etc. |
+| **Diagnostics** | DNS leak test, route table visualization |
+| **Auto-Update** | Checks GitHub Releases; supports `brew upgrade` and direct install |
+| **Speed Dashboard** | Real-time RX/TX graph |
+| **i18n** | English, Korean, Japanese |
+| **Dark / Light / System** | Follows OS appearance |
+
+Uses [wireguard-go](https://git.zx2c4.com/wireguard-go) (May 2025), 57 commits ahead of the official macOS app's engine.
 
 ---
 
