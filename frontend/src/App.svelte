@@ -656,6 +656,10 @@
                     {$t('tunnel.import')}
                   </button>
                 </div>
+                <div class="empty-drop-hint">
+                  <Icon name="download" size={12} strokeWidth={1.75} />
+                  <span>{$t('tunnel.drop_hint')}</span>
+                </div>
               </div>
             {/if}
           </div>
@@ -862,18 +866,20 @@
     text-transform: uppercase;
   }
 
-  /* ===== Nav groups ===== */
+  /* ===== Nav groups =====
+   * No hard dividers — the all-caps section label + spacing carry the
+   * hierarchy (macOS Settings.app sidebar pattern). A 0.5px line stretching
+   * from edge to edge of a 200px sidebar reads as heavier than intended
+   * and competes with the tonal-shift on the sidebar itself. */
   .nav-group {
     padding: 0 8px;
   }
   .nav-group + .nav-group {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 0.5px solid var(--border);
+    margin-top: 14px;
   }
   .nav-group-label {
     display: block;
-    padding: 4px 10px 6px;
+    padding: 6px 10px 4px;
     font: 600 10px/13px var(--font-sans);
     color: var(--text-muted);
     text-transform: uppercase;
@@ -1029,6 +1035,32 @@
     display: flex;
     gap: var(--space-2);
     margin-top: var(--space-1);
+  }
+  /* Drop affordance: small dashed pill below the primary actions so users
+   * see at idle that this region accepts dragged files. The full-viewport
+   * .drop-overlay (above) only appears during an active drag — this hint
+   * communicates the capability beforehand. */
+  .empty-drop-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--space-3);
+    padding: 6px 12px;
+    border: 1px dashed color-mix(in srgb, var(--text-muted) 55%, transparent);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font: var(--text-footnote);
+    line-height: 1;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .empty-drop-hint {
+      transition: border-color var(--dur-base, 200ms) var(--ease-out, ease),
+                  color var(--dur-base, 200ms) var(--ease-out, ease);
+    }
+  }
+  :global(.file-drop-target-active) .empty-drop-hint {
+    border-color: var(--accent);
+    color: var(--accent);
   }
   .btn-primary {
     display: inline-flex;
