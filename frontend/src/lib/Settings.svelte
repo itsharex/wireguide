@@ -13,6 +13,55 @@
 
   let aboutUpdating = false;
   let aboutShowVpnWarn = false;
+  // updateState mirrors UpdateState DTO from GetUpdateState. Used by the
+  // About tab to show last-checked timestamp + brew detection + an
+  // explicit "Check now" button (the launch-only check we used to do
+  // could leave About showing "up to date" for days after a release).
+  let updateState = null;
+  let aboutChecking = false;
+  let aboutCheckResult = '';
+
+  async function refreshUpdateState() {
+    try { updateState = await TunnelService.GetUpdateState(); } catch (_) {}
+  }
+
+  async function aboutCheckNow() {
+    if (aboutChecking) return;
+    aboutChecking = true;
+    aboutCheckResult = '';
+    try {
+      const info = await TunnelService.CheckForUpdate();
+      await refreshUpdateState();
+      if (info?.available) {
+        // New version found: the green "up to date" pill flips to the
+        // "Update" pill automatically (driven by `updateInfo`), so the
+        // pill itself is the success indicator — no extra result line.
+        if (typeof updateInfo !== 'undefined') {
+          updateInfo = info;
+        }
+      }
+      // Up-to-date result is *not* mirrored to aboutCheckResult on
+      // purpose: the pill already says "최신 버전입니다", and adding a
+      // second identical message below the row causes the UI to shift
+      // every time the user clicks "Check now". The "Last checked"
+      // timestamp flipping to "just now" is the silent feedback that
+      // the click actually did something.
+    } catch (e) {
+      aboutCheckResult = ($t('update.check_failed') || 'Check failed') + ': ' + (e?.message || e);
+    } finally {
+      aboutChecking = false;
+    }
+  }
+
+  function formatLastChecked(unix) {
+    if (!unix) return $t('update.never_checked');
+    const diff = Math.max(0, Date.now() / 1000 - unix);
+    if (diff < 60) return $t('update.last_checked', { time: 'just now' });
+    if (diff < 3600) return $t('update.last_checked', { time: Math.floor(diff / 60) + 'm ago' });
+    if (diff < 86400) return $t('update.last_checked', { time: Math.floor(diff / 3600) + 'h ago' });
+    return $t('update.last_checked', { time: Math.floor(diff / 86400) + 'd ago' });
+  }
+
 
   function aboutRequestUpdate() {
     if ($connectionStatus?.state === 'connected') {
@@ -43,6 +92,7 @@
     pin_interface: false,
     log_level: 'info',
     tray_icon_style: 'color',
+    auto_update_check: true,
     wifi_rules: {
       trusted_ssids: [],
       per_tunnel: {},
@@ -64,6 +114,10 @@
         settings.pin_interface = s.pin_interface ?? false;
         settings.log_level = s.log_level || 'info';
         settings.tray_icon_style = s.tray_icon_style || 'color';
+        // Legacy settings.json predates this field — *bool null on
+        // the Go side becomes undefined here; default to true to match
+        // Settings.AutoUpdateCheckEnabled() semantics.
+        settings.auto_update_check = (s.auto_update_check === false) ? false : true;
         if (s.wifi_rules) {
           settings.wifi_rules = {
             trusted_ssids: s.wifi_rules.trusted_ssids || [],
@@ -106,6 +160,7 @@
         health_check: settings.health_check,
         pin_interface: settings.pin_interface,
         log_level: settings.log_level,
+        auto_update_check: settings.auto_update_check,
         wifi_rules: {
           trusted_ssids: settings.wifi_rules?.trusted_ssids || [],
           per_tunnel: perTunnel,
@@ -230,6 +285,7 @@
     window.addEventListener('keydown', onKeyDown);
     (async () => {
       try { appVersion = await TunnelService.GetVersion(); } catch (_) {}
+      await refreshUpdateState();
     })();
   });
 </script>
@@ -290,6 +346,22 @@
                 <label class="setting-label" for="auto-start">{$t('settings.auto_start')}</label>
                 <label class="toggle">
                   <input id="auto-start" type="checkbox" checked={settings.auto_start} on:change={onAutoStartChange} />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="section-title">{$t('settings.section_updates')}</h4>
+            <div class="settings-card">
+              <div class="setting-row setting-row--toggle">
+                <div class="setting-info">
+                  <label class="setting-label" for="auto-update">{$t('settings.auto_update_check')}</label>
+                  <p class="setting-desc">{$t('settings.auto_update_check_hint')}</p>
+                </div>
+                <label class="toggle">
+                  <input id="auto-update" type="checkbox" bind:checked={settings.auto_update_check} on:change={scheduleSave} />
                   <span class="toggle-track"></span>
                 </label>
               </div>
@@ -399,6 +471,15 @@
                     </span>
                   {/if}
                 </div>
+                <div class="about-check-row">
+                  <button class="check-btn" on:click={aboutCheckNow} disabled={aboutChecking}>
+                    {aboutChecking ? $t('update.checking') : $t('update.check_now')}
+                  </button>
+                  <span class="check-meta">{formatLastChecked(updateState?.last_check_unix)}</span>
+                </div>
+                {#if aboutCheckResult}
+                  <div class="check-result">{aboutCheckResult}</div>
+                {/if}
               </div>
             </div>
 
@@ -786,6 +867,35 @@
     transform: translateY(-1px);
   }
   .pill-update:disabled { opacity: 0.65; cursor: wait; }
+
+  .about-check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .check-btn {
+    height: 24px;
+    padding: 0 10px;
+    font: 500 11px/14px var(--font-sans);
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .check-btn:hover:not(:disabled) { background: var(--bg-hover); }
+  .check-btn:disabled { opacity: 0.6; cursor: wait; }
+  .check-meta {
+    font: 400 11px/14px var(--font-sans);
+    color: var(--text-secondary);
+    font-feature-settings: "tnum";
+  }
+  .check-result {
+    margin-top: 6px;
+    font: 400 11px/15px var(--font-sans);
+    color: var(--text-secondary);
+  }
   .pill-dot {
     width: 6px;
     height: 6px;

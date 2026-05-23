@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -223,16 +224,21 @@ func (h *Helper) handleConnect(params json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
-	// C4: Auto-enable DNS protection when the user is on a full-tunnel
-	// with explicit DNS configured. Without this, Windows' multi-homed
-	// DNS resolver leaks queries to the physical adapter's DNS servers
-	// in parallel with the tunnel's — defeating one of the main reasons
-	// a privacy-conscious user enables a full-tunnel VPN.
+	// Windows-only: auto-enable DNS protection on full-tunnel.
 	//
-	// Best-effort: surface the inner error to the GUI as a non-fatal
-	// warning by logging here. Disconnect already rolls back the
-	// firewall.
-	if req.Config.IsFullTunnel() && len(req.Config.Interface.DNS) > 0 {
+	// Why Windows-specific: Windows' resolver does "smart multi-homed
+	// name resolution" which queries the DNS servers on EVERY active
+	// interface in parallel, leaking VPN-tunnel DNS queries to the
+	// ISP's DNS at the same time. Even with a kill switch this is a
+	// silent privacy leak. WFP DNS-port blocking is the documented
+	// fix (see wireguard-windows netquirk.md).
+	//
+	// macOS and Linux don't have this leak — their resolvers honour
+	// the tunnel-interface DNS exclusively when the route table sends
+	// the query out the tunnel. Auto-enabling there would override
+	// the user's explicit Settings.DNSProtection=false choice (the
+	// v0.2.0 behaviour), so we leave non-Windows platforms alone.
+	if runtime.GOOS == "windows" && req.Config.IsFullTunnel() && len(req.Config.Interface.DNS) > 0 {
 		status := h.manager.Status()
 		if status != nil && status.InterfaceName != "" {
 			if err := h.firewall.EnableDNSProtection(status.InterfaceName, req.Config.Interface.DNS); err != nil {

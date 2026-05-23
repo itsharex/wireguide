@@ -22,6 +22,7 @@ import (
 	"github.com/korjwl1/wireguide/internal/domain"
 	"github.com/korjwl1/wireguide/internal/ipc"
 	"github.com/korjwl1/wireguide/internal/storage"
+	"github.com/korjwl1/wireguide/internal/update"
 	"github.com/korjwl1/wireguide/internal/wifi"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -47,6 +48,7 @@ func init() {
 	application.RegisterEvent[map[string]any]("files-dropped")
 	application.RegisterEvent[HelperEvent]("helper")
 	application.RegisterEvent[struct{}]("helper_reset")
+	application.RegisterEvent[update.UpdateInfo]("update-available")
 }
 
 // Run starts the GUI process. Blocks until the Wails app exits.
@@ -287,6 +289,49 @@ func Run(assetsHandler http.Handler, dataDir string) error {
 	// goroutine until process death.
 	healthWg.Add(1)
 	startSSIDReporter(clients, healthDone, &healthWg)
+
+	// Update scheduler — periodic GitHub Releases check. Lives in the GUI
+	// process (not the helper) because update notifications are a pure UI
+	// concern and the helper runs as root with minimum network surface by
+	// design. Dev builds short-circuit inside Scheduler.Start, so this is
+	// inert until a release-tagged binary runs it.
+	updateStateStore, err := update.NewStateStore(paths.ConfigDir)
+	if err != nil {
+		slog.Warn("update scheduler: cannot create state store", "error", err)
+	} else {
+		schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+		scheduler := update.NewScheduler(updateStateStore, func(info *update.UpdateInfo) {
+			if info == nil {
+				return
+			}
+			app.Event.Emit("update-available", *info)
+		}, func() bool {
+			// Settings toggle gate: respected at every tick boundary so
+			// flipping the toggle off (or back on) takes effect without
+			// restarting the app.
+			s, err := settingsStore.Load()
+			if err != nil || s == nil {
+				return true // legacy / unreadable settings → default on
+			}
+			return s.AutoUpdateCheckEnabled()
+		})
+		scheduler.Start(schedulerCtx)
+		tunnelService.SetUpdateScheduler(scheduler, updateStateStore)
+
+		// Re-check when the window regains focus IF the cached check is
+		// older than `focusRecheckThreshold` (the scheduler's Kick handles
+		// the staleness gate). Covers the laptop-closed-for-a-week case.
+		win.OnWindowEvent(events.Common.WindowFocus, func(_ *application.WindowEvent) {
+			scheduler.Kick(false)
+		})
+
+		// Cancel scheduler on shutdown so its goroutine exits before
+		// app.Run returns.
+		go func() {
+			<-healthDone
+			schedulerCancel()
+		}()
+	}
 
 	// 9. Run (blocks)
 	err = app.Run()

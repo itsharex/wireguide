@@ -24,7 +24,7 @@ import (
 const (
 	githubRepo     = "korjwl1/wireguide"
 	apiEndpoint    = "https://api.github.com/repos/" + githubRepo + "/releases/latest"
-	currentVersion = "0.2.1-dev1"
+	currentVersion = "0.2.1-dev2"
 
 	// minAssetSize is the minimum acceptable size for a release asset.
 	// A macOS .dmg/.zip containing WireGuide.app is always well over 1 MB;
@@ -57,6 +57,164 @@ var expectedPublicKey = ""
 
 // CurrentVersion returns the hardcoded app version string.
 func CurrentVersion() string { return currentVersion }
+
+// IsDevBuild reports whether this binary was built from an in-progress
+// development version. Mirrors wireguard-windows'
+// `version.IsRunningOfficialVersion()` — periodic scheduler ticks check
+// this and stay silent on dev builds so a developer iterating on the
+// app doesn't burn the unauthenticated GitHub API rate budget on every
+// `task build` cycle.
+//
+// Dev versions use a `-devN` (or `-rcN`, `-beta`, etc.) suffix per the
+// existing `feedback_dev_build_workflow.md` convention.
+func IsDevBuild() bool {
+	return strings.Contains(currentVersion, "-")
+}
+
+// CheckResult is the structured result of a single check, separating
+// "no update / didn't change since last time" (Status304) from "new
+// update found" (info != nil) from "look-up failed".
+type CheckResult struct {
+	// Info carries the asset metadata when a newer version is available.
+	// Nil otherwise. Callers compare Info.Version with the persisted
+	// LastSeenVersion to decide whether to (re-)notify the user.
+	Info *UpdateInfo
+
+	// NotModified is true when the server replied 304 — the cached
+	// LastSeenVersion is still authoritative and no body was parsed.
+	NotModified bool
+
+	// ETag and LastModified are the response headers to persist for the
+	// next conditional request. Empty if the server omitted them.
+	ETag         string
+	LastModified string
+}
+
+// CheckForUpdateConditional is the rate-limit-friendly variant of
+// CheckForUpdate used by the periodic scheduler. It sends If-None-Match
+// and If-Modified-Since headers built from the previous successful
+// response so GitHub can answer 304 Not Modified without spending the
+// caller's request budget against the public-IP rate-limit bucket.
+//
+// `prevETag` / `prevLastModified` come from the persisted StateStore;
+// passing empty strings degrades to an unconditional fetch.
+func CheckForUpdateConditional(prevETag, prevLastModified string) (*CheckResult, error) {
+	client := newUpdateClient(10 * time.Second)
+	req, err := http.NewRequest(http.MethodGet, apiEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if prevETag != "" {
+		req.Header.Set("If-None-Match", prevETag)
+	}
+	if prevLastModified != "" {
+		req.Header.Set("If-Modified-Since", prevLastModified)
+	}
+	// GitHub returns richer JSON when this Accept header is set; without
+	// it some intermediaries strip the asset list.
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("checking updates: %w", err)
+	}
+	defer resp.Body.Close()
+
+	res := &CheckResult{
+		ETag:         resp.Header.Get("ETag"),
+		LastModified: resp.Header.Get("Last-Modified"),
+	}
+
+	if resp.StatusCode == http.StatusNotModified {
+		res.NotModified = true
+		return res, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		// 403 here usually means rate-limit; surface a typed error so
+		// the scheduler can extend its backoff.
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			return res, fmt.Errorf("github rate limit (HTTP %d)", resp.StatusCode)
+		}
+		return res, fmt.Errorf("github returned HTTP %d", resp.StatusCode)
+	}
+
+	info, err := parseReleaseBody(resp, client)
+	if err != nil {
+		return res, err
+	}
+	res.Info = info
+	return res, nil
+}
+
+// parseReleaseBody extracts the UpdateInfo from a 200 OK response. Pulled
+// out of CheckForUpdate so CheckForUpdateConditional and the legacy
+// CheckForUpdate share the exact same parsing path.
+func parseReleaseBody(resp *http.Response, client *http.Client) (*UpdateInfo, error) {
+	var release Release
+	limited := io.LimitReader(resp.Body, 10<<20)
+	if err := json.NewDecoder(limited).Decode(&release); err != nil {
+		return nil, err
+	}
+
+	latestVer := strings.TrimPrefix(release.TagName, "v")
+	if !isNewerVersion(latestVer, currentVersion) {
+		return &UpdateInfo{Available: false, CurrentVer: currentVersion, Version: latestVer}, nil
+	}
+
+	assetName := matchAsset(release.Assets)
+	if assetName == "" {
+		slog.Warn("update available but no matching asset for this platform",
+			"version", latestVer, "os", runtime.GOOS, "arch", runtime.GOARCH)
+		return &UpdateInfo{Available: false, CurrentVer: currentVersion, Version: latestVer}, nil
+	}
+	downloadURL := ""
+	var assetSize int64
+	checksumURL := ""
+	for _, a := range release.Assets {
+		if a.Name == assetName {
+			downloadURL = a.BrowserDownloadURL
+			assetSize = a.Size
+		}
+		if isCanonicalChecksumName(a.Name) && checksumURL == "" {
+			checksumURL = a.BrowserDownloadURL
+		}
+	}
+
+	if assetSize <= 0 {
+		return nil, fmt.Errorf("refusing update %s: GitHub reports asset size 0 (failed upload or tampered release)", latestVer)
+	}
+	if assetSize < minAssetSize {
+		return nil, fmt.Errorf("refusing update %s: asset size %d bytes is below minimum %d (likely corrupted or malicious)", latestVer, assetSize, minAssetSize)
+	}
+
+	var expectedHash string
+	if checksumURL != "" && assetName != "" {
+		expectedHash = fetchExpectedHash(checksumURL, assetName, client)
+	}
+
+	return &UpdateInfo{
+		Available:    true,
+		Version:      latestVer,
+		CurrentVer:   currentVersion,
+		ReleaseURL:   release.HTMLURL,
+		DownloadURL:  downloadURL,
+		ReleaseNotes: release.Body,
+		AssetName:    assetName,
+		AssetSize:    assetSize,
+		ChecksumURL:  checksumURL,
+		ExpectedHash: expectedHash,
+	}, nil
+}
+
+// BrewUpgradeCommand returns the shell command a Homebrew user should
+// run to upgrade WireGuide. Returned as a string (not executed) so the
+// UI can show it next to a Copy button — the cross-platform-app
+// convention is that the user runs the package-manager command, not the
+// app itself. See research-update-patterns notes (Tailscale, OrbStack)
+// for context.
+func BrewUpgradeCommand() string {
+	return "brew upgrade --cask wireguide"
+}
 
 // Release represents a GitHub release.
 type Release struct {

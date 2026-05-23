@@ -22,6 +22,14 @@ type Settings struct {
 	PinInterface  bool   `json:"pin_interface"` // pin bypass routes to upstream interface (-ifscope)
 	LogLevel      string `json:"log_level"`     // "debug", "info", "warn", "error"
 
+	// AutoUpdateCheck controls the periodic update scheduler. *bool so we
+	// can distinguish "user never touched this" from "user explicitly
+	// turned it off" — defaults to true on first load. A user who installs
+	// via brew might prefer to disable in-app checks and let brew handle
+	// it instead; an offline / corporate-network user might disable to
+	// silence the failed-check log noise.
+	AutoUpdateCheck *bool `json:"auto_update_check,omitempty"`
+
 	// WifiRules holds the SSID-based auto-connect / auto-disconnect
 	// policy. Per-tunnel auto-connect SSIDs are managed in TunnelDetail;
 	// trusted SSIDs (global disconnect on join) are managed in Settings.
@@ -30,21 +38,33 @@ type Settings struct {
 
 // DefaultSettings returns settings with sensible defaults.
 func DefaultSettings() *Settings {
+	on := true
 	return &Settings{
-		Language:      "auto",
-		Theme:         "system", // follows OS dark/light mode
-		TrayIconStyle: "color",
-		KillSwitch:    false,
-		DNSProtection: false,
-		HealthCheck:   false,
-		PinInterface:  false, // off by default — enable for dual-network setups
-		LogLevel:      "info",
+		Language:        "auto",
+		Theme:           "system", // follows OS dark/light mode
+		TrayIconStyle:   "color",
+		KillSwitch:      false,
+		DNSProtection:   false,
+		HealthCheck:     false,
+		PinInterface:    false, // off by default — enable for dual-network setups
+		LogLevel:        "info",
+		AutoUpdateCheck: &on,
 		WifiRules: wifi.Rules{
 			// Initialize the map so JSON serialization round-trips
 			// produce {} rather than null for an empty mapping.
 			PerTunnel: make(map[string]wifi.TunnelSSIDs),
 		},
 	}
+}
+
+// AutoUpdateCheckEnabled returns the effective value, treating nil
+// (unset in legacy settings.json) as true. Callers should use this
+// rather than dereferencing the pointer directly.
+func (s *Settings) AutoUpdateCheckEnabled() bool {
+	if s == nil || s.AutoUpdateCheck == nil {
+		return true
+	}
+	return *s.AutoUpdateCheck
 }
 
 // SettingsStore manages the app settings JSON file.

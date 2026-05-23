@@ -18,6 +18,7 @@ import (
 	"github.com/korjwl1/wireguide/internal/domain"
 	"github.com/korjwl1/wireguide/internal/ipc"
 	"github.com/korjwl1/wireguide/internal/storage"
+	"github.com/korjwl1/wireguide/internal/update"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -32,6 +33,15 @@ type TunnelService struct {
 	historyStore  *storage.HistoryStore
 	clients       *ipc.ClientHolder
 	app           *application.App
+
+	// updateScheduler + updateStore are wired in by the GUI Run() entry
+	// after the Wails service registers (we can't inject them at
+	// construction time because the scheduler needs the app reference to
+	// emit events). Both may stay nil in non-GUI test contexts; the
+	// CheckForUpdate / DismissUpdate methods fall back to one-shot
+	// behaviour in that case.
+	updateScheduler *update.Scheduler
+	updateStore     *update.StateStore
 
 	// activeSessions maps tunnel name → open history session ID. Used by
 	// ReconcileHistoryFromStatus to identify which row to close when a
@@ -83,6 +93,15 @@ func NewTunnelService(ts *storage.TunnelStore, ss *storage.SettingsStore, hs *st
 // SetApp injects the Wails app for dialog access.
 func (s *TunnelService) SetApp(app *application.App) {
 	s.app = app
+}
+
+// SetUpdateScheduler injects the periodic update-check scheduler and its
+// persistent state store. Called once from gui.Run() after the Wails app
+// is constructed. The frontend's "Check now" / dismiss / last-checked
+// queries route through these.
+func (s *TunnelService) SetUpdateScheduler(sched *update.Scheduler, store *update.StateStore) {
+	s.updateScheduler = sched
+	s.updateStore = store
 }
 
 // errHelperUnavailable is the error returned when the IPC client has been

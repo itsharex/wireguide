@@ -39,12 +39,17 @@
   let toast = '';
   let toastTimer = null;
   let updateInfo = null;
+  // updateState mirrors GetUpdateState() — brew detection + persisted
+  // last-checked timestamp. Loaded once at startup; refreshed by the
+  // Settings → About "Check now" flow.
+  let updateState = null;
   let filesDroppedUnsub = null;
   let helperUnsub = null;
   let helperResetUnsub = null;
   let wifiSsidUnsub = null;
   let autoConnectedUnsub = null;
   let criticalErrorUnsub = null;
+  let updateUnsub = null;
   let criticalErrors = []; // array of { where, detail, at } — shown as a persistent banner
 
   // App-level ESC handler: close the editor modal. ConfigEditor wraps
@@ -102,13 +107,23 @@
       /* helper may be mid-restart; status will arrive via events */
     }
 
-    // Auto-check for updates (non-blocking, best-effort)
+    // Update notifications now come from the Go-side scheduler via the
+    // 'update-available' Wails event (see internal/update/scheduler.go).
+    // The scheduler handles cadence (24h ±10%), jitter, ETag caching,
+    // and dev-build skip — none of which the launch-only check we used
+    // to do here could provide. See research-update-patterns for the
+    // rationale (wireguard-windows, VS Code, Obsidian cadences).
+    updateUnsub = Events.On('update-available', (event) => {
+      const info = event.data || {};
+      if (!info?.available) return;
+      // Backend already filters out dismissed + already-notified versions
+      // (see scheduler.maybeNotify), so every emit here is a fresh
+      // banner the user should see.
+      updateInfo = info;
+    });
     try {
-      const info = await TunnelService.CheckForUpdate();
-      if (info?.available) updateInfo = info;
-    } catch (e) {
-      // Silent — update check failure should never block the app
-    }
+      updateState = await TunnelService.GetUpdateState();
+    } catch (_) { /* GetUpdateState is best-effort UI hint */ }
 
     // Wails v3 native file drop — HTML5 dragdrop doesn't work in WebKit.
     // Event payload: { files: string[], details: {...} }
@@ -204,6 +219,7 @@
     if (wifiSsidUnsub) wifiSsidUnsub();
     if (autoConnectedUnsub) autoConnectedUnsub();
     if (criticalErrorUnsub) criticalErrorUnsub();
+    if (updateUnsub) updateUnsub();
     if (toastTimer) clearTimeout(toastTimer);
   });
 
@@ -556,6 +572,13 @@
       showToast('Update failed: ' + (e?.message || e));
     }
   }
+
+  async function handleDismissUpdate(version) {
+    try {
+      await TunnelService.DismissUpdate(version);
+    } catch (_) { /* dismissal is best-effort */ }
+    updateInfo = null;
+  }
 </script>
 
 <!-- The `$: $locale` subscription in the script block lets every `$t(...)`
@@ -664,7 +687,10 @@
 
     <!-- Main content -->
     <div class="main-content">
-      <UpdateNotice {updateInfo} onInstall={handleUpdate} />
+      <UpdateNotice
+        {updateInfo}
+        onInstall={handleUpdate}
+        onDismiss={handleDismissUpdate} />
 
       {#if currentView === 'tunnels'}
         <div class="tunnels-view">

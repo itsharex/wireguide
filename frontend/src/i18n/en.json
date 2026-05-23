@@ -151,6 +151,9 @@
     "up_to_date": "You're on the latest version.",
     "section_appearance": "Appearance",
     "section_startup": "Startup",
+    "section_updates": "Updates",
+    "auto_update_check": "Check for updates automatically",
+    "auto_update_check_hint": "When on, WireGuide checks GitHub once a day (with jitter and conditional GETs so it never wastes the public API quota).",
     "section_security": "Security",
     "section_connection": "Connection",
     "section_logging": "Logging"
@@ -267,11 +270,20 @@
     "update_now": "Update",
     "updating": "Updating...",
     "release_notes": "What's New",
+    "hide_notes": "Hide notes",
     "skip": "Skip This Version",
     "confirm_title": "Update WireGuide?",
     "vpn_warning": "The VPN connection will be briefly interrupted during the update. The app will restart automatically.",
     "proceed": "Update Now",
-    "cancel": "Later"
+    "cancel": "Later",
+    "copy_command": "Copy",
+    "copied": "Copied",
+    "check_now": "Check now",
+    "checking": "Checking…",
+    "up_to_date": "You're on the latest version ({version})",
+    "last_checked": "Last checked {time}",
+    "never_checked": "Never checked",
+    "check_failed": "Check failed"
   },
   "wifi_permission": {
     "title": "Location Services required",

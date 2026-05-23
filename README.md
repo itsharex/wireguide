@@ -29,7 +29,7 @@
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/03-autocomplete.png" width="400" /><br><sub>Autocomplete</sub></td>
-    <td align="center"><img src="docs/screenshots/04-diagnostics.png" width="400" /><br><sub>Diagnostics</sub></td>
+    <td align="center"><img src="docs/screenshots/05-settings.png" width="400" /><br><sub>Settings</sub></td>
   </tr>
 </table>
 
@@ -44,14 +44,14 @@
 | **Tunnel Management** | Import, create, edit, export `.conf` files. Drag-and-drop import. |
 | **Config Editor** | CodeMirror 6 with WireGuard syntax highlighting and autocompletion |
 | **System Tray** | Connection status badge, 1-click connect/disconnect |
-| **Kill Switch** | Blocks all non-VPN traffic via macOS `pf` (optional) |
+| **Kill Switch** | Blocks all non-VPN traffic — macOS `pf`, Linux `nftables`, Windows WFP (optional) |
 | **DNS Protection** | Forces DNS queries through the VPN tunnel only (optional) |
 | **Health Check** | Handshake age monitoring with auto-reconnect (optional) |
-| **Sleep/Wake Recovery** | Detects system wake via NSWorkspace and handles tunnel recovery |
-| **Route Monitor** | Re-applies endpoint bypass routes on gateway changes |
+| **Sleep/Wake Recovery** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows power notifications |
+| **Route Monitor** | Re-applies endpoint bypass routes on gateway changes — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
 | **Pin Interface** | Prevents latency spikes on dual-network (WiFi + Ethernet) setups |
 | **Conflict Detection** | Warns about route conflicts with Tailscale, other WG interfaces, etc. |
-| **Diagnostics** | Ping test, DNS leak test, route table visualization |
+| **Diagnostics** | DNS leak test, route table visualization |
 | **Auto-Update** | Checks GitHub Releases; supports `brew upgrade` and direct install |
 | **Speed Dashboard** | Real-time RX/TX graph |
 | **i18n** | English, Korean, Japanese |
@@ -126,7 +126,7 @@ graph LR
 | Frontend | Svelte + Vite |
 | WireGuard | [wireguard-go](https://git.zx2c4.com/wireguard-go) + [wgctrl-go](https://github.com/WireGuard/wgctrl-go) |
 | Editor | [CodeMirror 6](https://codemirror.net/) |
-| Firewall | macOS `pf` / Linux `nftables` / Windows `netsh advfirewall` |
+| Firewall | macOS `pf` / Linux `nftables` / Windows WFP (Filtering Platform) |
 
 ---
 

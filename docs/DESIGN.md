@@ -154,7 +154,7 @@ Controlled via the `Network.SetPinInterface` IPC method from the GUI Settings pa
 
 ### Route Monitor
 
-Equivalent to wg-quick's `monitor_daemon`. Watches `route -n monitor` for kernel route table changes and:
+Equivalent to wg-quick's `monitor_daemon`. The change source is OS-specific — macOS uses the `PF_ROUTE` socket (`route -n monitor` equivalent), Linux subscribes to `NETLINK_ROUTE`, Windows registers `NotifyIpInterfaceChange`/`NotifyRouteChange2` callbacks via `iphlpapi`. All three feed the same reapply path, which:
 
 1. Compares current gateway against cached value
 2. If changed: deletes old bypass routes, re-adds with new gateway
@@ -163,7 +163,15 @@ Equivalent to wg-quick's `monitor_daemon`. Watches `route -n monitor` for kernel
 
 **Anti-loop protection**: caches `lastGatewayV4/V6` to skip spurious RTM events. Without this, our own `route add` commands trigger reapply in a tight loop.
 
-## Kill Switch (macOS pf)
+## Kill Switch
+
+Per-platform backends, all driven by the same `Firewall.SetKillSwitch` IPC method:
+
+- **macOS** — `pf` rules in the `com.apple.wireguide` anchor (details below)
+- **Linux** — `nftables` table `wireguide_killswitch`, output chain `policy drop` with allow rules for loopback/tunnel/endpoint/DHCP. Input chain is strict (`policy drop`) — see [issue note](#linux-input-chain-strict)
+- **Windows** — WFP (Filtering Platform) provider + sublayer at weight `0xFFFF`, `ALE_AUTH_CONNECT_V4/V6` block filters plus allow exceptions for the tunnel LUID, loopback, DHCP/NDP, and the resolved peer endpoint. No `netsh advfirewall` is touched, matching the official wireguard-windows behavior
+
+### macOS pf
 
 Rules are loaded into the `com.apple.wireguide` anchor. macOS ships with `anchor "com.apple/*" all` in pf.conf, so our anchor is automatically evaluated — **we never modify the main ruleset**.
 
@@ -238,10 +246,12 @@ Rule: always acquire in the order `connectMu → mu → wifiMu`. Never hold a lo
 
 ### Sleep/Wake Detection
 
-Two mechanisms (both send to the same channel):
+Native suspend/wake detection per OS, with a wall-clock fallback that runs on every platform:
 
-1. **NSWorkspace.didWakeNotification** (cgo) — instant detection
-2. **Wall-clock polling** (fallback) — 10s interval, 30s threshold
+1. **macOS** — `NSWorkspace.didWakeNotification` via cgo (instant)
+2. **Linux** — `systemd-logind` `PrepareForSleep` signal over DBus (instant)
+3. **Windows** — `PowerRegisterSuspendResumeNotification` against a message-only window (instant)
+4. **Wall-clock polling** (fallback, all platforms) — 10s interval, 30s threshold; covers the case where the native signal is missing (no logind, DBus down, etc.)
 
 ### Health Check (optional, off by default)
 
@@ -297,6 +307,7 @@ JSON-RPC 2.0 over Unix domain socket. Socket permissions: `0600`, peer UID verif
 |--------|-----------|-------------|
 | `Helper.Ping` | GUI->Helper | Version check, liveness |
 | `Helper.Shutdown` | GUI->Helper | Graceful helper shutdown |
+| `Helper.ForceShutdown` | GUI->Helper | Bypass graceful teardown; `os.Exit` after best-effort firewall cleanup. Used by the upgrade path when `Shutdown` is wedged. |
 | `Helper.Subscribe` | GUI->Helper | Subscribe to event notifications |
 | `Helper.SetLogLevel` | GUI->Helper | Change runtime log level |
 | `Tunnel.Connect` | GUI->Helper | Start VPN tunnel (`ConnectRequest`) |
@@ -316,6 +327,7 @@ JSON-RPC 2.0 over Unix domain socket. Socket permissions: `0600`, peer UID verif
 | `event.log` | Helper->GUI | Structured log entries |
 | `event.wifi_ssid` | Helper->GUI | SSID changed (`WifiSSIDPayload{OldSSID, NewSSID}`) |
 | `event.auto_connect` | Helper->GUI | Wi-Fi rule fired and connected (`AutoConnectPayload{TunnelName}`) |
+| `event.critical_error` | Helper->GUI | A background goroutine exceeded the `goSafe` restart budget; tunnel state may not match reality. The GUI surfaces this via a banner/toast. |
 
 ### Key Request/Response Types
 

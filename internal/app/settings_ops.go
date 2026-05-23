@@ -184,13 +184,75 @@ func (s *TunnelService) GetVersion() string {
 	return update.CurrentVersion()
 }
 
-// CheckForUpdate queries GitHub for a newer release.
+// CheckForUpdate is the legacy synchronous check kept for backward
+// compatibility with the (now-removed) onMount call. New code should call
+// ManualCheckForUpdate, which routes through the scheduler so the result
+// is also persisted (ETag, last-checked timestamp) and the in-app banner
+// can update without a separate round-trip.
 func (s *TunnelService) CheckForUpdate() (*update.UpdateInfo, error) {
+	if s.updateScheduler != nil {
+		res, err := s.updateScheduler.CheckNow()
+		if err != nil {
+			return nil, err
+		}
+		if res == nil || res.Info == nil {
+			return &update.UpdateInfo{Available: false, CurrentVer: update.CurrentVersion()}, nil
+		}
+		return res.Info, nil
+	}
 	return update.CheckForUpdate()
 }
 
-// RunUpdate performs the update. If installed via Homebrew, runs brew upgrade.
-// Otherwise downloads and installs directly from GitHub Releases.
+// UpdateState is the frontend-facing snapshot of persisted check state.
+// Exposed so Settings → About can show "Last checked: 2 hours ago" and
+// reflect dismissed-version state across app restarts.
+type UpdateState struct {
+	CurrentVersion    string   `json:"current_version"`
+	LastCheckUnix     int64    `json:"last_check_unix"`
+	LastSeenVersion   string   `json:"last_seen_version"`
+	DismissedVersions []string `json:"dismissed_versions"`
+	IsDevBuild        bool     `json:"is_dev_build"`
+	IsBrewInstall    bool     `json:"is_brew_install"`
+	BrewUpgradeCmd   string   `json:"brew_upgrade_cmd"`
+}
+
+// GetUpdateState returns persisted state for the About tab UI.
+func (s *TunnelService) GetUpdateState() UpdateState {
+	out := UpdateState{
+		CurrentVersion: update.CurrentVersion(),
+		IsDevBuild:     update.IsDevBuild(),
+		IsBrewInstall:  runtime.GOOS == "darwin" && update.IsBrewInstall(),
+		BrewUpgradeCmd: update.BrewUpgradeCommand(),
+	}
+	if s.updateStore != nil {
+		st := s.updateStore.Get()
+		out.LastCheckUnix = st.LastCheckUnix
+		out.LastSeenVersion = st.LastSeenVersion
+		out.DismissedVersions = st.DismissedVersions
+	}
+	return out
+}
+
+// DismissUpdate persists a version dismissal so the in-app banner stays
+// hidden across restarts until a newer version arrives.
+func (s *TunnelService) DismissUpdate(version string) error {
+	if s.updateStore == nil {
+		return nil
+	}
+	return s.updateStore.Dismiss(version)
+}
+
+// RunUpdate performs the update end-to-end:
+//
+//   - Homebrew installs → `brew update && brew upgrade --cask wireguide`,
+//     letting the cask's postflight handle the killall + relaunch. This
+//     is the "one-click" expectation users have, not "copy this command
+//     into your terminal".
+//   - Non-brew installs → open the GitHub Releases page in the browser.
+//     Auto-replacing an un-notarised `.app` bundle needs sudo and races
+//     with Gatekeeper quarantining of the new binary; redirecting the
+//     user to the download page is the honest path for an indie macOS
+//     app without an Apple Developer account.
 func (s *TunnelService) RunUpdate(info *update.UpdateInfo) error {
 	if info == nil || !info.Available {
 		return fmt.Errorf("no update available")
@@ -198,7 +260,6 @@ func (s *TunnelService) RunUpdate(info *update.UpdateInfo) error {
 
 	if runtime.GOOS == "darwin" && update.IsBrewInstall() {
 		brewBin := update.BrewPath()
-		// Update tap first to ensure latest cask version is fetched
 		slog.Info("update: running brew update", "brew", brewBin)
 		if out, err := exec.Command(brewBin, "update").CombinedOutput(); err != nil {
 			slog.Warn("brew update failed, continuing with upgrade", "error", err, "output", string(out))
@@ -209,14 +270,10 @@ func (s *TunnelService) RunUpdate(info *update.UpdateInfo) error {
 		if err != nil {
 			return fmt.Errorf("brew upgrade failed: %w (%s)", err, string(out))
 		}
-		// postflight in the cask handles killall + relaunch
+		// Cask postflight handles killall + relaunch; nothing more to do.
 		return nil
 	}
 
-	// Non-brew installs: open GitHub Releases page in browser.
-	// Auto-replacing the app bundle needs sudo and has many failure modes,
-	// so we let the user download and replace manually — same UX as most
-	// indie macOS apps.
 	slog.Info("update: opening GitHub Releases page (non-brew install)")
 	if s.app != nil {
 		return s.app.Browser.OpenURL("https://github.com/korjwl1/wireguide/releases/latest")
