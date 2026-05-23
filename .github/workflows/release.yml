@@ -84,10 +84,23 @@ jobs:
           # Append, don't overwrite — PATH already has system entries.
           "$env:USERPROFILE\go\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
+      - name: Install NSIS + add to PATH
+        # NSIS used to ship preinstalled on windows-latest runners but is
+        # no longer on the default PATH (and may not be in the image at
+        # all on newer windows-2025 builds), so wails3's NSIS packager
+        # exits 127 with "makensis: executable file not found".
+        # `choco install -y nsis` is idempotent — a no-op if already
+        # present — and we explicitly add the bin dir to GITHUB_PATH so
+        # the subsequent step's child processes (go-task → makensis)
+        # find it without depending on choco's PATH refresh behavior.
+        shell: pwsh
+        run: |
+          choco install -y nsis --no-progress
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files (x86)\NSIS"
+
       - name: Build .exe + NSIS installer
         # Our Windows binary is pure-syscall (no cgo) so CGO_ENABLED=0
-        # is correct. NSIS ships preinstalled on windows-latest runners.
-        # vendor:wintun pulls the pinned wintun.dll into bin/.
+        # is correct. vendor:wintun pulls the pinned wintun.dll into bin/.
         run: wails3 task windows:package ARCH=${{ matrix.arch }}
 
       - name: Locate installer + rename
