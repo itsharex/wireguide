@@ -283,7 +283,14 @@
     "up_to_date": "최신 버전입니다 ({version})",
     "last_checked": "마지막 확인 {time}",
     "never_checked": "확인 기록 없음",
-    "check_failed": "확인 실패"
+    "first_check_scheduled": "곧 첫 확인 예정…",
+    "check_failed": "확인 실패",
+    "time_just_now": "방금",
+    "time_minutes_ago": "{n}분 전",
+    "time_hours_ago": "{n}시간 전",
+    "time_days_ago": "{n}일 전",
+    "dev_build_hint": "개발 빌드에서는 자동 확인이 비활성화되어 있습니다. 위 버튼으로 수동 확인하세요.",
+    "auto_off_hint": "설정에서 자동 확인이 꺼져 있습니다. 위 버튼으로 수동 확인하세요."
   },
   "wifi_permission": {
     "title": "위치 서비스 권한 필요",

@@ -283,7 +283,14 @@
     "up_to_date": "You're on the latest version ({version})",
     "last_checked": "Last checked {time}",
     "never_checked": "Never checked",
-    "check_failed": "Check failed"
+    "first_check_scheduled": "First check scheduled…",
+    "check_failed": "Check failed",
+    "time_just_now": "just now",
+    "time_minutes_ago": "{n}m ago",
+    "time_hours_ago": "{n}h ago",
+    "time_days_ago": "{n}d ago",
+    "dev_build_hint": "Automatic checks are disabled in development builds. Use the button above to check manually.",
+    "auto_off_hint": "Automatic checks are turned off in Settings. Use the button above to check manually."
   },
   "wifi_permission": {
     "title": "Location Services required",

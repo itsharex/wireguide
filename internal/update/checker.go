@@ -2,6 +2,7 @@
 package update
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -65,10 +66,35 @@ func CurrentVersion() string { return currentVersion }
 // app doesn't burn the unauthenticated GitHub API rate budget on every
 // `task build` cycle.
 //
-// Dev versions use a `-devN` (or `-rcN`, `-beta`, etc.) suffix per the
-// existing `feedback_dev_build_workflow.md` convention.
+// We match an explicit allow-list of pre-release markers rather than
+// "any hyphen". semver pre-release tags (-rc1, -beta, -alpha) and
+// build metadata can both contain hyphens for legitimate official
+// releases (`0.3.0-rc1` is shipped publicly), so a bare
+// `strings.Contains(currentVersion, "-")` would incorrectly mute the
+// scheduler on a real release-candidate build. Our convention (see
+// `feedback_dev_build_workflow.md`) is to use `-devN` for in-progress
+// builds; the other markers are listed defensively so that future
+// release pipelines (rc/beta) keep the scheduler ON in production
+// hands while still skipping local dev iteration.
 func IsDevBuild() bool {
-	return strings.Contains(currentVersion, "-")
+	lower := strings.ToLower(currentVersion)
+	for _, marker := range devBuildMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// devBuildMarkers is the closed allow-list of substrings that flag a
+// build as pre-release. Tested against the lower-cased version string.
+// Keep this list short and surgical — adding "snapshot" or "ci" here
+// would also catch any future stable version that incidentally
+// contains those words.
+var devBuildMarkers = []string{
+	"-dev",  // our project convention: 0.2.1-dev1, 0.2.1-dev2, ...
+	"-snap", // generic snapshot builds (CI artefacts, nightly)
+	"-pre",  // pre-release marker some projects use
 }
 
 // CheckResult is the structured result of a single check, separating
@@ -98,9 +124,14 @@ type CheckResult struct {
 //
 // `prevETag` / `prevLastModified` come from the persisted StateStore;
 // passing empty strings degrades to an unconditional fetch.
-func CheckForUpdateConditional(prevETag, prevLastModified string) (*CheckResult, error) {
+//
+// ctx is propagated so app-shutdown cancellation (schedulerCancel in
+// gui.Run) interrupts an in-flight HTTP call cleanly instead of waiting
+// for the client-side timeout. Pass context.Background() if the caller
+// doesn't have a context (e.g. test code).
+func CheckForUpdateConditional(ctx context.Context, prevETag, prevLastModified string) (*CheckResult, error) {
 	client := newUpdateClient(10 * time.Second)
-	req, err := http.NewRequest(http.MethodGet, apiEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +169,7 @@ func CheckForUpdateConditional(prevETag, prevLastModified string) (*CheckResult,
 		return res, fmt.Errorf("github returned HTTP %d", resp.StatusCode)
 	}
 
-	info, err := parseReleaseBody(resp, client)
+	info, err := parseReleaseBody(ctx, resp, client)
 	if err != nil {
 		return res, err
 	}
@@ -148,8 +179,9 @@ func CheckForUpdateConditional(prevETag, prevLastModified string) (*CheckResult,
 
 // parseReleaseBody extracts the UpdateInfo from a 200 OK response. Pulled
 // out of CheckForUpdate so CheckForUpdateConditional and the legacy
-// CheckForUpdate share the exact same parsing path.
-func parseReleaseBody(resp *http.Response, client *http.Client) (*UpdateInfo, error) {
+// CheckForUpdate share the exact same parsing path. The ctx is threaded
+// through to the optional SHA256SUMS sub-fetch so cancellation propagates.
+func parseReleaseBody(ctx context.Context, resp *http.Response, client *http.Client) (*UpdateInfo, error) {
 	var release Release
 	limited := io.LimitReader(resp.Body, 10<<20)
 	if err := json.NewDecoder(limited).Decode(&release); err != nil {
@@ -189,7 +221,7 @@ func parseReleaseBody(resp *http.Response, client *http.Client) (*UpdateInfo, er
 
 	var expectedHash string
 	if checksumURL != "" && assetName != "" {
-		expectedHash = fetchExpectedHash(checksumURL, assetName, client)
+		expectedHash = fetchExpectedHash(ctx, checksumURL, assetName, client)
 	}
 
 	return &UpdateInfo{
@@ -287,10 +319,21 @@ func newUpdateClient(timeout time.Duration) *http.Client {
 	}
 }
 
-// CheckForUpdate queries GitHub Releases API for newer version.
+// CheckForUpdate queries GitHub Releases API for a newer version.
+//
+// Kept as a context-less, no-cache convenience wrapper for tests and
+// any external caller that doesn't have a cancellation surface to
+// thread. Production code paths go through CheckForUpdateConditional
+// (via Scheduler) so they share the ETag + ctx-cancellation
+// machinery.
 func CheckForUpdate() (*UpdateInfo, error) {
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
 	client := newUpdateClient(10 * time.Second)
-	resp, err := client.Get(apiEndpoint)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("checking updates: %w", err)
 	}
@@ -350,7 +393,7 @@ func CheckForUpdate() (*UpdateInfo, error) {
 	// Try to pre-fetch the expected hash from the checksum file.
 	var expectedHash string
 	if checksumURL != "" && assetName != "" {
-		expectedHash = fetchExpectedHash(checksumURL, assetName, client)
+		expectedHash = fetchExpectedHash(ctx, checksumURL, assetName, client)
 	}
 
 	return &UpdateInfo{
@@ -601,8 +644,37 @@ func fetchSmall(url string, client *http.Client) ([]byte, error) {
 
 // isNewerVersion compares two semver strings (without "v" prefix).
 // Returns true if latest is newer than current.
+//
+// Pre-release suffixes (`-dev2`, `-rc1`, `-beta`, build metadata after
+// `+`) are stripped before comparison: we only compare numeric
+// MAJOR.MINOR.PATCH parts. This means a `-dev2` build correctly sees
+// `99.0.0` as newer (the previous strconv.Atoi("1-dev2") returned nil
+// and the function returned false for *every* comparison from a dev
+// binary), and a future `-rc1` build sees the matching stable as the
+// same version rather than newer.
+//
+// Strict semver pre-release ordering (rc1 < rc2 < stable) is NOT
+// implemented — our release flow doesn't ship `-rcN` tags, and the
+// extra complexity would only matter if it did. If we ever do, switch
+// to golang.org/x/mod/semver instead of hand-rolling it.
 func isNewerVersion(latest, current string) bool {
+	stripSuffix := func(v string) string {
+		// Drop semver build metadata first (`+sha.5114`), then any
+		// pre-release tail (`-dev2`, `-rc1`). The order matters because
+		// "+" can legally appear inside a pre-release segment.
+		if i := strings.IndexByte(v, '+'); i >= 0 {
+			v = v[:i]
+		}
+		if i := strings.IndexByte(v, '-'); i >= 0 {
+			v = v[:i]
+		}
+		return v
+	}
 	parseParts := func(v string) []int {
+		v = stripSuffix(v)
+		if v == "" {
+			return nil
+		}
 		var parts []int
 		for _, s := range strings.Split(v, ".") {
 			n, err := strconv.Atoi(s)
@@ -641,8 +713,12 @@ func isNewerVersion(latest, current string) bool {
 //     still the first whitespace-delimited token)
 //
 // Returns an empty string if the URL fetch fails or no line matches.
-func fetchExpectedHash(checksumURL, assetName string, client *http.Client) string {
-	resp, err := client.Get(checksumURL)
+func fetchExpectedHash(ctx context.Context, checksumURL, assetName string, client *http.Client) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumURL, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}

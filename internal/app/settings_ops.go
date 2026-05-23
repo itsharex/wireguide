@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/korjwl1/wireguide/internal/autostart"
 	"github.com/korjwl1/wireguide/internal/ipc"
@@ -113,6 +115,17 @@ func (s *TunnelService) SaveSettings(settings *storage.Settings) error {
 		// the level change is not critical to Save succeeding.
 		_ = s.call(ipc.MethodSetLogLevel, ipc.SetLogLevelRequest{Level: settings.LogLevel}, nil)
 	}
+
+	// Auto-update toggle OFF→ON: nudge the scheduler so the user doesn't
+	// have to wait up to 24 h for the next regular tick. The force flag
+	// on Kick bypasses the focusRecheckThreshold gate (we *want* to
+	// re-check immediately after the user opts back in, regardless of
+	// when the last check ran). OFF→OFF, ON→ON, and ON→OFF all skip.
+	prevEnabled := prev == nil || prev.AutoUpdateCheckEnabled()
+	if !prevEnabled && settings.AutoUpdateCheckEnabled() && s.updateScheduler != nil {
+		s.updateScheduler.Kick(true)
+	}
+
 	return nil
 }
 
@@ -204,16 +217,26 @@ func (s *TunnelService) CheckForUpdate() (*update.UpdateInfo, error) {
 }
 
 // UpdateState is the frontend-facing snapshot of persisted check state.
-// Exposed so Settings → About can show "Last checked: 2 hours ago" and
-// reflect dismissed-version state across app restarts.
+// Exposed so Settings → About can render the "Last checked …" line and
+// the first-check placeholder correctly.
+//
+// IsDevBuild + AutoEnabled together let the UI distinguish three
+// "not-yet-checked" cases that look identical to a naive `last_check==0`
+// gate:
+//
+//	dev build  → scheduler is intentionally inert, show "Never checked"
+//	auto off   → user disabled the scheduler, show "Never checked"
+//	auto on    → first tick is 30–120 s away, show "scheduled" hint
+//
+// CurrentVersion is duplicated here (also in GetVersion()) so the About
+// tab doesn't need two round-trips to render.
 type UpdateState struct {
 	CurrentVersion    string   `json:"current_version"`
 	LastCheckUnix     int64    `json:"last_check_unix"`
 	LastSeenVersion   string   `json:"last_seen_version"`
 	DismissedVersions []string `json:"dismissed_versions"`
 	IsDevBuild        bool     `json:"is_dev_build"`
-	IsBrewInstall    bool     `json:"is_brew_install"`
-	BrewUpgradeCmd   string   `json:"brew_upgrade_cmd"`
+	AutoEnabled       bool     `json:"auto_enabled"`
 }
 
 // GetUpdateState returns persisted state for the About tab UI.
@@ -221,8 +244,12 @@ func (s *TunnelService) GetUpdateState() UpdateState {
 	out := UpdateState{
 		CurrentVersion: update.CurrentVersion(),
 		IsDevBuild:     update.IsDevBuild(),
-		IsBrewInstall:  runtime.GOOS == "darwin" && update.IsBrewInstall(),
-		BrewUpgradeCmd: update.BrewUpgradeCommand(),
+		AutoEnabled:    true,
+	}
+	if s.settingsStore != nil {
+		if cfg, _ := s.settingsStore.Load(); cfg != nil {
+			out.AutoEnabled = cfg.AutoUpdateCheckEnabled()
+		}
 	}
 	if s.updateStore != nil {
 		st := s.updateStore.Get()
@@ -260,17 +287,37 @@ func (s *TunnelService) RunUpdate(info *update.UpdateInfo) error {
 
 	if runtime.GOOS == "darwin" && update.IsBrewInstall() {
 		brewBin := update.BrewPath()
+
+		// `brew update` is pure-network (git fetch on tap repos); 90 s is
+		// generous even on a slow link. If it hangs past that, the GitHub
+		// API or the user's DNS is wedged — we'd rather surface that to
+		// the user via a clear timeout than spin forever with "Updating…".
+		updCtx, updCancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer updCancel()
 		slog.Info("update: running brew update", "brew", brewBin)
-		if out, err := exec.Command(brewBin, "update").CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(updCtx, brewBin, "update").CombinedOutput(); err != nil {
 			slog.Warn("brew update failed, continuing with upgrade", "error", err, "output", string(out))
 		}
+
+		// `brew upgrade --cask wireguide` runs the cask postflight which
+		// killalls and relaunches us. The postflight typically completes
+		// in 10–20 s; 5 min is a defensive ceiling for slow disks or
+		// signature-check work — if we hit it, brew is genuinely stuck.
+		//
+		// Note: the cask postflight kills *this* process, which is the
+		// parent of brew's exec. Go's exec.CommandContext attaches the
+		// child's Wait, but a SIGKILL on the parent terminates the wait
+		// before brew completes — the new wireguide binary that brew
+		// installs will be launched fresh, so this RunUpdate's return
+		// value never gets surfaced anywhere in practice.
+		upCtx, upCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer upCancel()
 		slog.Info("update: running brew upgrade --cask wireguide")
-		cmd := exec.Command(brewBin, "upgrade", "--cask", "wireguide")
+		cmd := exec.CommandContext(upCtx, brewBin, "upgrade", "--cask", "wireguide")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("brew upgrade failed: %w (%s)", err, string(out))
 		}
-		// Cask postflight handles killall + relaunch; nothing more to do.
 		return nil
 	}
 

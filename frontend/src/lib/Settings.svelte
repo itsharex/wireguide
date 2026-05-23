@@ -20,13 +20,35 @@
   let updateState = null;
   let aboutChecking = false;
   let aboutCheckResult = '';
+  // nowTick drives formatLastChecked re-evaluation. Without this, opening
+  // Settings and leaving it on the About tab for 10 minutes would still
+  // show "just now". Updated every 60 s by an interval started in
+  // onMount and torn down in onDestroy.
+  let nowTick = Date.now();
+  let nowTimer = null;
 
   async function refreshUpdateState() {
     try { updateState = await TunnelService.GetUpdateState(); } catch (_) {}
   }
 
+  // Last *attempted* manual check, including failures — used to throttle
+  // rapid-click. Distinct from updateState.last_check_unix which only
+  // tracks *successful* checks (the scheduler's contract).
+  let lastManualCheckMs = 0;
+  const MANUAL_CHECK_MIN_INTERVAL_MS = 5000;
+
   async function aboutCheckNow() {
     if (aboutChecking) return;
+    // Rate-limit guard. Without this, holding-down "Check now" sends a
+    // request per response-time interval (~few hundred ms) and burns the
+    // 60-req/hour anonymous GitHub quota for everyone behind the same
+    // public IP. The 5 s floor lines up with what a frustrated human can
+    // tolerate; a programmatic caller will hit it harmlessly.
+    const now = Date.now();
+    if (now - lastManualCheckMs < MANUAL_CHECK_MIN_INTERVAL_MS) {
+      return;
+    }
+    lastManualCheckMs = now;
     aboutChecking = true;
     aboutCheckResult = '';
     try {
@@ -36,9 +58,9 @@
         // New version found: the green "up to date" pill flips to the
         // "Update" pill automatically (driven by `updateInfo`), so the
         // pill itself is the success indicator — no extra result line.
-        if (typeof updateInfo !== 'undefined') {
-          updateInfo = info;
-        }
+        // updateInfo is always declared (export let updateInfo = null);
+        // assigning here mutates the prop so the parent's binding sees it.
+        updateInfo = info;
       }
       // Up-to-date result is *not* mirrored to aboutCheckResult on
       // purpose: the pill already says "최신 버전입니다", and adding a
@@ -53,13 +75,32 @@
     }
   }
 
-  function formatLastChecked(unix) {
-    if (!unix) return $t('update.never_checked');
+  // `_tick` parameter forces Svelte to re-run this whenever nowTick
+  // changes (every 60 s). Without it, Svelte couldn't tell the result
+  // depends on time and would cache the first evaluation forever.
+  function formatLastChecked(unix, _tick) {
+    if (!unix) {
+      // First-launch placeholder: when auto-check is on and the scheduler
+      // hasn't fired its first tick yet (30–120 s after startup), show
+      // a "scheduled" hint instead of the misleading "Never checked".
+      // Dev builds never schedule, so they still get "Never checked".
+      if (updateState?.auto_enabled && !updateState?.is_dev_build) {
+        return $t('update.first_check_scheduled');
+      }
+      return $t('update.never_checked');
+    }
     const diff = Math.max(0, Date.now() / 1000 - unix);
-    if (diff < 60) return $t('update.last_checked', { time: 'just now' });
-    if (diff < 3600) return $t('update.last_checked', { time: Math.floor(diff / 60) + 'm ago' });
-    if (diff < 86400) return $t('update.last_checked', { time: Math.floor(diff / 3600) + 'h ago' });
-    return $t('update.last_checked', { time: Math.floor(diff / 86400) + 'd ago' });
+    let time;
+    if (diff < 60) {
+      time = $t('update.time_just_now');
+    } else if (diff < 3600) {
+      time = $t('update.time_minutes_ago', { n: Math.floor(diff / 60) });
+    } else if (diff < 86400) {
+      time = $t('update.time_hours_ago', { n: Math.floor(diff / 3600) });
+    } else {
+      time = $t('update.time_days_ago', { n: Math.floor(diff / 86400) });
+    }
+    return $t('update.last_checked', { time });
   }
 
 
@@ -252,6 +293,7 @@
       clearTimeout(saveTimer);
       save();
     }
+    if (nowTimer) clearInterval(nowTimer);
   });
 
   function stopEvent(e) { e.stopPropagation(); }
@@ -283,6 +325,9 @@
   // window-level keydown listener that called save() on stale state.
   onMount(() => {
     window.addEventListener('keydown', onKeyDown);
+    // 60 s tick so the "Last checked Nm ago" line keeps current while
+    // the Settings modal is open. Cleanup is in onDestroy above.
+    nowTimer = setInterval(() => { nowTick = Date.now(); }, 60000);
     (async () => {
       try { appVersion = await TunnelService.GetVersion(); } catch (_) {}
       await refreshUpdateState();
@@ -475,8 +520,17 @@
                   <button class="check-btn" on:click={aboutCheckNow} disabled={aboutChecking}>
                     {aboutChecking ? $t('update.checking') : $t('update.check_now')}
                   </button>
-                  <span class="check-meta">{formatLastChecked(updateState?.last_check_unix)}</span>
+                  <span class="check-meta">{formatLastChecked(updateState?.last_check_unix, nowTick)}</span>
                 </div>
+                {#if updateState?.is_dev_build}
+                  <!-- Explains why "Never checked" sticks even on a healthy install:
+                       dev builds intentionally skip the auto-check loop so local
+                       iteration doesn't burn the GitHub API quota. Manual button
+                       still works, hence the "use the button" framing. -->
+                  <div class="check-hint">{$t('update.dev_build_hint')}</div>
+                {:else if updateState && !updateState.auto_enabled}
+                  <div class="check-hint">{$t('update.auto_off_hint')}</div>
+                {/if}
                 {#if aboutCheckResult}
                   <div class="check-result">{aboutCheckResult}</div>
                 {/if}
@@ -895,6 +949,12 @@
     margin-top: 6px;
     font: 400 11px/15px var(--font-sans);
     color: var(--text-secondary);
+  }
+  .check-hint {
+    margin-top: 6px;
+    font: 400 11px/15px var(--font-sans);
+    color: var(--text-muted, var(--text-secondary));
+    font-style: italic;
   }
   .pill-dot {
     width: 6px;

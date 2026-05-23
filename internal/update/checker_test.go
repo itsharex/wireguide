@@ -1,6 +1,7 @@
 package update
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -126,7 +127,7 @@ func TestFetchExpectedHash_Found(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got := fetchExpectedHash(srv.URL, "WireGuide-darwin-arm64.dmg", srv.Client())
+	got := fetchExpectedHash(context.Background(), srv.URL, "WireGuide-darwin-arm64.dmg", srv.Client())
 	if got != wantHash {
 		t.Errorf("fetchExpectedHash = %q, want %q", got, wantHash)
 	}
@@ -138,7 +139,7 @@ func TestFetchExpectedHash_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got := fetchExpectedHash(srv.URL, "WireGuide-darwin-arm64.dmg", srv.Client())
+	got := fetchExpectedHash(context.Background(), srv.URL, "WireGuide-darwin-arm64.dmg", srv.Client())
 	if got != "" {
 		t.Errorf("fetchExpectedHash = %q, want empty", got)
 	}
@@ -152,7 +153,7 @@ func TestFetchExpectedHash_CaseInsensitiveFilename(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got := fetchExpectedHash(srv.URL, "WireGuide-Darwin-ARM64.dmg", srv.Client())
+	got := fetchExpectedHash(context.Background(), srv.URL, "WireGuide-Darwin-ARM64.dmg", srv.Client())
 	if got != wantHash {
 		t.Errorf("fetchExpectedHash = %q, want %q (case-insensitive match)", got, wantHash)
 	}
@@ -164,7 +165,7 @@ func TestFetchExpectedHash_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got := fetchExpectedHash(srv.URL, "file.dmg", srv.Client())
+	got := fetchExpectedHash(context.Background(), srv.URL, "file.dmg", srv.Client())
 	if got != "" {
 		t.Errorf("fetchExpectedHash on server error = %q, want empty", got)
 	}

@@ -283,7 +283,14 @@
     "up_to_date": "最新バージョンです ({version})",
     "last_checked": "前回 {time}",
     "never_checked": "未確認",
-    "check_failed": "確認に失敗しました"
+    "first_check_scheduled": "まもなく初回確認…",
+    "check_failed": "確認に失敗しました",
+    "time_just_now": "たった今",
+    "time_minutes_ago": "{n}分前",
+    "time_hours_ago": "{n}時間前",
+    "time_days_ago": "{n}日前",
+    "dev_build_hint": "開発ビルドでは自動確認が無効化されています。上のボタンで手動確認してください。",
+    "auto_off_hint": "設定で自動確認がオフになっています。上のボタンで手動確認してください。"
   },
   "wifi_permission": {
     "title": "位置情報サービスの許可が必要",

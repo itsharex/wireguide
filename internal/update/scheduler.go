@@ -160,10 +160,13 @@ func (s *Scheduler) Latest() *CheckResult {
 // the kick / sleep machinery so the user gets immediate feedback.
 //
 // CheckNow respects ETag caching but ignores the dev-build skip — the
-// user explicitly asked, so we honour it even on a dev binary.
+// user explicitly asked, so we honour it even on a dev binary. Uses
+// context.Background() because the Wails RPC entry point has no
+// caller-side cancellation; the http.Client's 10 s timeout still
+// applies, so a hung GitHub doesn't wedge the UI.
 func (s *Scheduler) CheckNow() (*CheckResult, error) {
 	st := s.store.Get()
-	res, err := CheckForUpdateConditional(st.ETag, st.LastModified)
+	res, err := CheckForUpdateConditional(context.Background(), st.ETag, st.LastModified)
 	s.recordResult(res, err)
 	if err != nil {
 		return res, err
@@ -196,7 +199,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 		}
 
 		st := s.store.Get()
-		res, err := CheckForUpdateConditional(st.ETag, st.LastModified)
+		res, err := CheckForUpdateConditional(ctx, st.ETag, st.LastModified)
 		s.recordResult(res, err)
 
 		if err != nil {
