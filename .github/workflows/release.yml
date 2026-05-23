@@ -1,0 +1,154 @@
+name: Release
+
+# Fires on annotated/lightweight tags shaped like vX.Y.Z (or vX.Y.Z-foo).
+# The four build jobs run in parallel; the final `release` job collects
+# every artifact, generates SHA256SUMS, and attaches them all to the
+# GitHub Release the tag triggers.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # needed by softprops/action-gh-release to upload assets
+
+jobs:
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-latest is Apple Silicon; macos-13 is the last Intel
+          # runner GitHub still hosts. Building each arch on its native
+          # host avoids the CGO-cross-compile fiddliness (the .m files
+          # in internal/wifi want a host-toolchain SDK match).
+          - arch: arm64
+            runner: macos-latest
+          - arch: amd64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wails3 + task
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+          go install github.com/go-task/task/v3/cmd/task@latest
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Build .app bundle (ad-hoc signed)
+        # darwin:package does: build:native → create:app:bundle →
+        # codesign:adhoc. ARCH selects the GOARCH on the inner go build.
+        run: wails3 task darwin:package ARCH=${{ matrix.arch }}
+
+      - name: Archive .app
+        # ditto preserves macOS metadata (extended attributes, symlinks,
+        # the codesign signature) better than plain `zip -ry`. The
+        # resulting .zip stays Gatekeeper-quarantine-friendly.
+        run: |
+          cd bin
+          ditto -c -k --sequesterRsrc --keepParent wireguide.app "WireGuide-darwin-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: bin/WireGuide-darwin-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: windows-latest  # x86_64 host; cross-compiles arm64 fine (no cgo)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wails3 + task
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+          go install github.com/go-task/task/v3/cmd/task@latest
+          # Append, don't overwrite — PATH already has system entries.
+          "$env:USERPROFILE\go\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build .exe + NSIS installer
+        # Our Windows binary is pure-syscall (no cgo) so CGO_ENABLED=0
+        # is correct. NSIS ships preinstalled on windows-latest runners.
+        # vendor:wintun pulls the pinned wintun.dll into bin/.
+        run: wails3 task windows:package ARCH=${{ matrix.arch }}
+
+      - name: Locate installer + rename
+        shell: bash
+        # makensis writes to build/windows/nsis with a generic name;
+        # find it, copy with the canonical Asset name our update
+        # checker expects (matchTokenAnchored: windows + amd64/arm64
+        # surrounded by '-', '_', or '.').
+        run: |
+          set -e
+          out=$(find build/windows/nsis bin -maxdepth 3 -type f -name "*.exe" -not -name "wireguide.exe" | head -1)
+          if [ -z "$out" ]; then
+            echo "ERROR: NSIS installer not found"
+            find build/windows bin -type f
+            exit 1
+          fi
+          cp "$out" "bin/WireGuide-windows-${{ matrix.arch }}.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: bin/WireGuide-windows-${{ matrix.arch }}.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # Need the tag-pointed commit for the release-notes context;
+        # softprops/action-gh-release reads CHANGELOG.md if present.
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true  # flattens 4 sub-dirs into one folder
+
+      - name: Generate SHA256SUMS
+        # Matches the format internal/update/checker.go expects (GNU
+        # coreutils two-space layout). The checker's signature path
+        # also looks for SHA256SUMS.sig next to this file — skipped
+        # for now because we have no signing key wired up in CI yet.
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
