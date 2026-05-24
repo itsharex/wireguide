@@ -10,9 +10,9 @@ version: "0.3.0"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A wireguide application"
-vendor: "My Company"
-homepage: "https://wails.io"
+description: "Cross-platform WireGuard VPN desktop client"
+vendor: "korjwl1"
+homepage: "https://github.com/korjwl1/wireguide"
 license: "MIT"
 release: "1"
 

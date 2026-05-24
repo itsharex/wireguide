@@ -18,15 +18,22 @@ Unicode true
 ## > makensis -DARG_WAILS_AMD64_BINARY=..\..\bin\app-amd64.exe -DARG_WAILS_ARM64_BINARY=..\..\bin\app-arm64.exe
 ####
 ## The following information is taken from the wails_tools.nsh file, but they can be overwritten here.
+## These !defines are evaluated before the !include below, so they win over the
+## wails-generated fallbacks in wails_tools.nsh — which lets us hand-pick branding
+## without editing the "DO NOT EDIT" generated file.
+####
+!define INFO_COMPANYNAME    "korjwl1"
+!define INFO_PRODUCTNAME    "WireGuide"
+!define INFO_COPYRIGHT      "© 2026 korjwl1"
+# UNINST_KEY_NAME drives the registry key under Uninstall\ and the "Programs and
+# Features" display. Default is "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}" =
+# "korjwl1WireGuide", which is awkward — override to the clean product name.
+!define UNINST_KEY_NAME     "WireGuide"
 ####
 ## !define INFO_PROJECTNAME    "my-project" # Default "wireguide"
-## !define INFO_COMPANYNAME    "My Company" # Default "My Company"
-## !define INFO_PRODUCTNAME    "My Product Name" # Default "My Product"
 ## !define INFO_PRODUCTVERSION "1.0.0"     # Default "0.1.0"
-## !define INFO_COPYRIGHT      "(c) Now, My Company" # Default "© 2026, My Company"
 ###
 ## !define PRODUCT_EXECUTABLE  "Application.exe"      # Default "${INFO_PROJECTNAME}.exe"
-## !define UNINST_KEY_NAME     "UninstKeyInRegistry"  # Default "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 ####
 ## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
 ####
@@ -72,7 +79,9 @@ ManifestDPIAware true
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
-InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Default installing folder ($PROGRAMFILES is Program Files folder).
+# Single folder under Program Files — the wails default "<company>\<product>" nests
+# "korjwl1\WireGuide" which is ugly when company is just a github handle.
+InstallDir "$PROGRAMFILES64\${INFO_PRODUCTNAME}"
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit

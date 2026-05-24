@@ -8,15 +8,15 @@
   IgnorableNamespaces="uap3">
   
   <Identity 
-    Name="com.example.wireguide"
-    Publisher="CN=My Company"
+    Name="com.korjwl1.wireguide"
+    Publisher="CN=korjwl1"
     Version="0.3.0.0"
     ProcessorArchitecture="x64" />
   
   <Properties>
-    <DisplayName>My Product</DisplayName>
-    <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A wireguide application</Description>
+    <DisplayName>WireGuide</DisplayName>
+    <PublisherDisplayName>korjwl1</PublisherDisplayName>
+    <Description>Cross-platform WireGuard VPN desktop client</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -29,10 +29,10 @@
   </Resources>
   
   <Applications>
-    <Application Id="com.example.wireguide" Executable="wireguide" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="com.korjwl1.wireguide" Executable="wireguide" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="My Product"
-        Description="A wireguide application"
+        DisplayName="WireGuide"
+        Description="Cross-platform WireGuard VPN desktop client"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
