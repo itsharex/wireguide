@@ -5,7 +5,7 @@
 <h1 align="center">WireGuide</h1>
 
 <p align="center">
-  A cross-platform WireGuard VPN client with a modern UI, kill switch, and auto-reconnect.
+  <b>A WireGuard VPN client for people who don't want to think about WireGuard.</b>
 </p>
 
 <p align="center">
@@ -32,6 +32,76 @@
     <td align="center"><img src="docs/screenshots/05-settings.png" width="400" /><br><sub>Settings</sub></td>
   </tr>
 </table>
+
+---
+
+## Why WireGuide
+
+Most WireGuard clients are built for the person who set up the server. WireGuide is built for the rest of the team.
+
+Hand a `.conf` file to a non-technical coworker. They should be online in three steps:
+
+1. Drag the file into WireGuide
+2. Click **On**
+3. (There is no step 3.)
+
+That's the whole product from the user's side. Everything else is plumbing that quietly keeps the tunnel up, so the IT person doesn't have to keep fielding *"the VPN is broken again"* messages.
+
+---
+
+## Design
+
+**Small surface, careful insides.**
+
+The UI deliberately exposes a tiny number of things to click. Features that ship in WireGuide have to satisfy two rules:
+
+1. They must not break the system when something goes wrong.
+2. The everyday user must not need to know they exist.
+
+That means most of WireGuide runs silently in the background.
+
+### What the user sees
+
+- Drag-and-drop `.conf` import (also QR and ZIP)
+- A list of tunnels, each with one big toggle
+- A tray icon that shows whether you're connected
+- Optional: connect when you join the office Wi-Fi, disconnect when you leave
+
+### What runs silently underneath
+
+- **Sleep/wake recovery** — the tunnel comes back after the lid closes
+- **Route monitor** — keeps working when you move between Wi-Fi and Ethernet
+- **Kill switch** — if the tunnel drops, nothing leaks while WireGuide is reconnecting. Uses the OS-native firewall (`pf` on macOS, WFP on Windows, `nftables` on Linux), not a userspace shim
+- **Health check + auto-reconnect** — fixes a stalled handshake without the user noticing
+- **DNS protection** — DNS queries are pinned to the tunnel
+- **Conflict detection** — warns when another VPN (Tailscale, another WG interface) would step on routes
+
+### For the person who set up the server
+
+- Config editor with WireGuard syntax highlighting and autocomplete (CodeMirror 6)
+- DNS leak test and route table view
+- Real-time RX/TX dashboard
+- Multi-tunnel — keep dev / staging / prod connected at once
+- Per-tunnel notes and connection history
+
+### Not included on purpose
+
+- No account, no telemetry, no "Pro" tier
+- No protocols other than WireGuard
+- No bundled extras you didn't ask for
+
+---
+
+## Stability over features
+
+WireGuide ships fewer knobs than most desktop VPN clients on purpose. The trade is that the few it does ship are meant to be boring and reliable.
+
+- **Privilege separation.** A single binary runs in two modes. The GUI runs unprivileged. A small helper runs as root / Administrator. They talk over a local Unix socket (macOS/Linux) or named pipe (Windows). Nothing is exposed over HTTP or the network.
+- **OS-native firewall.** The kill switch uses `pf` (macOS), WFP (Windows), or `nftables` (Linux) — not a userspace packet filter that fails open.
+- **Up-to-date crypto.** Built on [wireguard-go](https://git.zx2c4.com/wireguard-go) (May 2025) — 57 commits ahead of the engine inside the official macOS app, which hasn't been updated since Feb 2023.
+- **Manual QA per release.** Every tagged release is exercised on macOS (Apple Silicon) and Windows 11 (amd64) before it goes out.
+
+If something breaks, helper logs are plain text — not behind a paywall. Open an issue and attach them.
 
 ---
 
@@ -74,32 +144,6 @@ task build
 
 ---
 
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Wi-Fi Auto-Connect** | Per-tunnel SSID rules: auto-connect on join, auto-disconnect on leave, trusted networks. Runs in the helper — works even when the GUI is closed. |
-| **Multi-Tunnel** | Connect multiple WireGuard tunnels simultaneously with per-tunnel state |
-| **Tunnel Management** | Import, create, edit, export `.conf` files. Drag-and-drop import. |
-| **Config Editor** | CodeMirror 6 with WireGuard syntax highlighting and autocompletion |
-| **System Tray** | Connection status badge, 1-click connect/disconnect |
-| **Kill Switch** | Blocks all non-VPN traffic — macOS `pf`, Linux `nftables`, Windows WFP (optional) |
-| **DNS Protection** | Forces DNS queries through the VPN tunnel only (optional) |
-| **Health Check** | Handshake age monitoring with auto-reconnect (optional) |
-| **Sleep/Wake Recovery** | macOS `NSWorkspace`, Linux `systemd-logind`, Windows power notifications |
-| **Route Monitor** | Re-applies endpoint bypass routes on gateway changes — macOS `RTM`, Linux netlink, Windows `NotifyIpInterfaceChange` |
-| **Pin Interface** | Prevents latency spikes on dual-network (WiFi + Ethernet) setups |
-| **Conflict Detection** | Warns about route conflicts with Tailscale, other WG interfaces, etc. |
-| **Diagnostics** | DNS leak test, route table visualization |
-| **Auto-Update** | Checks GitHub Releases; supports `brew upgrade` and direct install |
-| **Speed Dashboard** | Real-time RX/TX graph |
-| **i18n** | English, Korean, Japanese |
-| **Dark / Light / System** | Follows OS appearance |
-
-Uses [wireguard-go](https://git.zx2c4.com/wireguard-go) (May 2025), 57 commits ahead of the official macOS app's engine.
-
----
-
 ## Architecture
 
 ```mermaid
@@ -138,6 +182,7 @@ graph LR
 | WireGuard | [wireguard-go](https://git.zx2c4.com/wireguard-go) + [wgctrl-go](https://github.com/WireGuard/wgctrl-go) |
 | Editor | [CodeMirror 6](https://codemirror.net/) |
 | Firewall | macOS `pf` / Linux `nftables` / Windows WFP (Filtering Platform) |
+| i18n | English, Korean, Japanese |
 
 ---
 
